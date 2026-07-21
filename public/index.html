@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brahmand</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Marked Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      background-color: #FFFFFF;
+      color: #0d0d0d;
+    }
+
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ─── SIDEBAR ─── */
+    .sidebar {
+      width: 260px;
+      height: 100%;
+      background-color: #F9F9F9;
+      border-right: 1px solid #E5E5E5;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px 12px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-top {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 6px 12px 6px;
+    }
+
+    .sidebar-header-left {
+      font-size: 1.2rem;
+      color: #0d0d0d;
+    }
+
+    .sidebar-header-right {
+      display: flex;
+      gap: 12px;
+      color: #666;
+      font-size: 0.95rem;
+    }
+
+    .sidebar-header-right i {
+      cursor: pointer;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #0d0d0d;
+      cursor: pointer;
+      text-decoration: none;
+      margin-bottom: 12px;
+      background-color: #ECECF1;
+    }
+
+    .nav-btn:hover {
+      background-color: #E2E2E8;
+    }
+
+    .chat-history-container {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #666;
+      padding: 8px 6px 4px 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      color: #2d2d2d;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .history-item:hover {
+      background-color: #EFEFEF;
+    }
+
+    .history-item.active {
+      background-color: #EAEAEA;
+      font-weight: 500;
+    }
+
+    .item-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .history-actions {
+      display: none;
+      gap: 8px;
+      color: #777;
+      font-size: 0.8rem;
+    }
+
+    .history-item:hover .history-actions {
+      display: flex;
+    }
+
+    .action-icon:hover {
+      color: #000;
+    }
+
+    .action-icon.delete:hover {
+      color: #dc2626;
+    }
+
+    /* ─── MAIN AREA ─── */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+    }
+
+    .top-header {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #0d0d0d;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .top-header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .new-chat-icon {
+      font-size: 1.1rem;
+      color: #666;
+      cursor: pointer;
+    }
+
+    /* Center Content Container */
+    .chat-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      overflow-y: auto;
+      padding-bottom: 20px;
+    }
+
+    /* Initial Hero State */
+    .hero-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 760px;
+      text-align: center;
+      margin-top: auto;
+      margin-bottom: auto;
+      padding: 20px;
+    }
+
+    .hero-title {
+      font-size: 2.2rem;
+      font-weight: 600;
+      color: #0d0d0d;
+    }
+
+    /* Active Conversation Feed */
+    .active-chat-container {
+      width: 100%;
+      max-width: 760px;
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+      padding: 20px;
+      padding-bottom: 120px;
+    }
+
+    .message-row {
+      display: flex;
+      gap: 16px;
+      line-height: 1.6;
+    }
+
+    .msg-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .msg-avatar.bot { background-color: #10A37F; color: white; }
+    .msg-avatar.user { background-color: #4B5563; color: white; }
+
+    .msg-content { flex: 1; font-size: 0.95rem; }
+    .msg-content table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    .msg-content th, .msg-content td { border: 1px solid #E5E5E5; padding: 8px 12px; }
+    .msg-content th { background-color: #F9F9F9; }
+
+    .model-badge {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .generated-img {
+      max-width: 360px;
+      border-radius: 12px;
+      margin-top: 12px;
+      border: 1px solid #e5e5e5;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    /* Sticky Bottom Input Bar */
+    .input-section {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 10px 20px 20px;
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(to top, rgba(255,255,255,1) 80%, rgba(255,255,255,0));
+      z-index: 20;
+    }
+
+    .pill-input-wrapper {
+      width: 100%;
+      max-width: 760px;
+      background: #FFFFFF;
+      border: 1px solid #E5E5E5;
+      border-radius: 30px;
+      padding: 8px 12px 8px 20px;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .pill-input-wrapper:focus-within {
+      border-color: #C5C5C5;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .pill-textarea {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 0.98rem;
+      color: #0d0d0d;
+      resize: none;
+      height: 24px;
+      line-height: 24px;
+    }
+
+    .pill-textarea::placeholder {
+      color: #8E8E93;
+    }
+
+    .black-circle-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: #0d0d0d;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: none;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+
+    <!-- ─── SIDEBAR ─── -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        
+        <div class="sidebar-header">
+          <div class="sidebar-header-left">
+            <i class="fa-brands fa-openai"></i>
+          </div>
+          <div class="sidebar-header-right">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <i class="fa-regular fa-pen-to-square" onclick="resetToHome()"></i>
+          </div>
+        </div>
+
+        <a class="nav-btn" onclick="resetToHome()">
+          <i class="fa-regular fa-pen-to-square"></i> New chat
+        </a>
+
+        <div class="chat-history-container">
+          <div id="pinnedSection" style="display: none;">
+            <div class="section-title">Pinned</div>
+            <div id="pinnedList"></div>
+          </div>
+
+          <div class="section-title">Recent Chats</div>
+          <div id="recentList"></div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- ─── MAIN AREA ─── -->
+    <main class="main-area">
+
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="brand-title" onclick="resetToHome()">
+          Brahmand <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: #666;"></i>
+        </div>
+
+        <div class="top-header-right">
+          <i class="fa-regular fa-circle-user new-chat-icon"></i>
+        </div>
+      </header>
+
+      <!-- Chat View -->
+      <div class="chat-view" id="chatView">
+        
+        <!-- Hero Section -->
+        <div class="hero-container" id="heroContainer">
+          <h1 class="hero-title">What’s on your mind today?</h1>
+        </div>
+
+        <!-- Active Chat Feed -->
+        <div class="active-chat-container" id="activeChatContainer"></div>
+
+      </div>
+
+      <!-- Sticky Bottom Input Bar -->
+      <div class="input-section">
+        <div class="pill-input-wrapper">
+          <textarea class="pill-textarea" id="userInput" placeholder="Ask anything" rows="1" onkeydown="handleKeyDown(event)"></textarea>
+          <button class="black-circle-btn" onclick="sendMessage()">
+            <i class="fa-solid fa-arrow-up"></i>
+          </button>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <script>
+    let currentSessionId = null;
+    let sessions = JSON.parse(localStorage.getItem('brahmand_sessions') || '[]');
+
+    async function startNewSession() {
+      try {
+        const res = await fetch('/api/session/new', { method: 'POST' });
+        const data = await res.json();
+        currentSessionId = data.sessionId;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    startNewSession();
+    renderSidebarChats();
+
+    function resetToHome() {
+      document.getElementById('heroContainer').style.display = 'flex';
+      document.getElementById('activeChatContainer').style.display = 'none';
+      document.getElementById('activeChatContainer').innerHTML = '';
+      startNewSession();
+      renderSidebarChats();
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      document.getElementById('heroContainer').style.display = 'none';
+      const feed = document.getElementById('activeChatContainer');
+      feed.style.display = 'flex';
+
+      appendMessage(message, 'user');
+      input.value = '';
+
+      saveSessionMessage(currentSessionId, message, 'user');
+
+      appendLoading();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, sessionId: currentSessionId })
+        });
+        const data = await res.json();
+
+        removeLoading();
+
+        if (data.success) {
+          appendMessage(data.message, 'bot', data.model, data.imageUrl);
+          saveSessionMessage(currentSessionId, data.message, 'bot', data.model, data.imageUrl);
+        } else {
+          appendMessage('Error: ' + (data.error || 'Gadbad ho gayi'), 'bot');
+        }
+      } catch (err) {
+        removeLoading();
+        appendMessage('Connection Error: Server running hai kya dekhna.', 'bot');
+      }
+    }
+
+    function saveSessionMessage(sessId, text, sender, model = null, imageUrl = null) {
+      let session = sessions.find(s => s.id === sessId);
+      if (!session) {
+        session = {
+          id: sessId,
+          title: text.length > 28 ? text.substring(0, 28) + '...' : text,
+          pinned: false,
+          messages: []
+        };
+        sessions.unshift(session);
+      }
+      session.messages.push({ text, sender, model, imageUrl });
+      localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+      renderSidebarChats();
+    }
+
+    function renderSidebarChats() {
+      const pinnedList = document.getElementById('pinnedList');
+      const recentList = document.getElementById('recentList');
+      const pinnedSection = document.getElementById('pinnedSection');
+
+      pinnedList.innerHTML = '';
+      recentList.innerHTML = '';
+
+      const pinned = sessions.filter(s => s.pinned);
+      const recent = sessions.filter(s => !s.pinned);
+
+      if (pinned.length > 0) {
+        pinnedSection.style.display = 'block';
+        pinned.forEach(s => pinnedList.appendChild(createChatItem(s)));
+      } else {
+        pinnedSection.style.display = 'none';
+      }
+
+      recent.forEach(s => recentList.appendChild(createChatItem(s)));
+    }
+
+    function createChatItem(session) {
+      const div = document.createElement('div');
+      div.className = `history-item ${session.id === currentSessionId ? 'active' : ''}`;
+      div.onclick = () => loadChatSession(session.id);
+
+      div.innerHTML = `
+        <div class="item-text">
+          <i class="fa-regular fa-comment"></i>
+          <span>${escapeHtml(session.title)}</span>
+        </div>
+        <div class="history-actions" onclick="event.stopPropagation()">
+          <i class="fa-solid fa-thumbtack action-icon" title="${session.pinned ? 'Unpin' : 'Pin'}" onclick="togglePin('${session.id}')"></i>
+          <i class="fa-regular fa-trash-can action-icon delete" title="Delete" onclick="deleteSession('${session.id}')"></i>
+        </div>
+      `;
+      return div;
+    }
+
+    function togglePin(id) {
+      const s = sessions.find(item => item.id === id);
+      if (s) {
+        s.pinned = !s.pinned;
+        localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+        renderSidebarChats();
+      }
+    }
+
+    async function deleteSession(id) {
+      sessions = sessions.filter(s => s.id !== id);
+      localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+
+      try {
+        await fetch(`/api/session/${id}`, { method: 'DELETE' });
+      } catch (e) {}
+
+      if (id === currentSessionId) {
+        resetToHome();
+      } else {
+        renderSidebarChats();
+      }
+    }
+
+    function loadChatSession(id) {
+      currentSessionId = id;
+      const session = sessions.find(s => s.id === id);
+      if (!session) return;
+
+      document.getElementById('heroContainer').style.display = 'none';
+      const feed = document.getElementById('activeChatContainer');
+      feed.style.display = 'flex';
+      feed.innerHTML = '';
+
+      session.messages.forEach(m => appendMessage(m.text, m.sender, m.model, m.imageUrl));
+      renderSidebarChats();
+    }
+
+    function appendMessage(text, sender, model = null, imageUrl = null) {
+      const feed = document.getElementById('activeChatContainer');
+      const row = document.createElement('div');
+      row.className = 'message-row';
+
+      const avatarClass = sender === 'bot' ? 'bot' : 'user';
+      const avatarIcon = sender === 'bot' ? `<img src="/brahmand-avatar.svg" style="width:100%; height:100%; border-radius:50%;" />` : 'P';
+      const parsedContent = sender === 'bot' ? marked.parse(text) : `<p>${escapeHtml(text)}</p>`;
+
+      let modelBadge = model ? `<div class="model-badge"><i class="fa-solid fa-bolt"></i> Powered by ${escapeHtml(model)}</div>` : '';
+      let imgTag = imageUrl ? `<div><img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" /></div>` : '';
+
+      row.innerHTML = `
+        <div class="msg-avatar ${avatarClass}">${avatarIcon}</div>
+        <div class="msg-content">
+          ${parsedContent}
+          ${imgTag}
+          ${modelBadge}
+        </div>
+      `;
+
+      feed.appendChild(row);
+      document.getElementById('chatView').scrollTop = document.getElementById('chatView').scrollHeight;
+    }
+
+    function appendLoading() {
+      const feed = document.getElementById('activeChatContainer');
+      const row = document.createElement('div');
+      row.className = 'message-row';
+      row.id = 'loadingRow';
+      row.innerHTML = `
+        <div class="msg-avatar bot">🌌</div>
+        <div class="msg-content" style="opacity: 0.6;"><p><i class="fa-solid fa-circle-notch fa-spin"></i> Thinking...</p></div>
+      `;
+      feed.appendChild(row);
+      document.getElementById('chatView').scrollTop = document.getElementById('chatView').scrollHeight;
+    }
+
+    function removeLoading() {
+      const loading = document.getElementById('loadingRow');
+      if (loading) loading.remove();
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+</body>
+</html>
