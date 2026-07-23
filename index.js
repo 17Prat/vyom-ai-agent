@@ -12,6 +12,7 @@ import { loadAllSkills } from './utils/skillLoader.js';
 import { generatePosterImage } from './services/mediaService.js';
 import { searchWeb } from './services/searchService.js';
 import { scrapeWebsite } from './services/scrapeService.js';
+import { getRandomGitaShloka, getDailyPanchang } from './utils/spiritualDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/appicon.jpeg', express.static(path.join(__dirname, 'icon', 'appicon.jpeg')));
 
 // Clients Initialization
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
@@ -39,13 +41,22 @@ if (telegramToken && telegramToken !== 'YOUR_BOT_TOKEN_HERE') {
 }
 
 const BASE_SYSTEM_PROMPT = `You are Brahmand (ब्रह्मांड), an elite AI Specialist Agent available on Web and Telegram.
-Be highly intelligent, friendly, concise, and helpful in Hinglish, Hindi, or English.`;
+Be highly intelligent, friendly, concise, and helpful.
+
+LANGUAGE POLICY:
+- If the user writes/queries in English, respond in English.
+- If the user writes/queries in Hinglish (Hindi using the Latin alphabet, e.g., "sunn search krke de", "post leke aa", "kaise ho"), you MUST respond in Hinglish.
+- Do NOT respond in pure Hindi (Devanagari script like "नमस्ते, मैं आपकी सहायता...") unless the user explicitly queries in Devanagari script.
+
+IMPORTANT: You do not have access to call external API functions/tools (like web-search) directly in JSON tool format. You must always reply in normal conversational text/Markdown. Never output raw tool-call JSON blocks like '{"name": "web-search", ...}'.
+
+CRITICAL INSTAGRAM URL RULE: 
+When users ask for Instagram posts, reels, or links, do not hallucinate, fake, or invent shortcodes. Instead, cite and present the verified real-time resolved URLs provided to you in the search context.`;
 
 const chatSessions = {};
 
-// 🧠 Multi-Model Completion (openai/gpt-oss-120b Primary + Fallbacks)
+// 🧠 Multi-Model Completion
 async function getAIResponse(messages) {
-  // Preference 1: Groq openai/gpt-oss-120b Model
   if (groq) {
     try {
       const res = await groq.chat.completions.create({
@@ -76,7 +87,6 @@ async function getAIResponse(messages) {
     }
   }
 
-  // Preference 2: Cerebras Fallback
   if (cerebras) {
     try {
       const res = await cerebras.chat.completions.create({
@@ -121,7 +131,21 @@ if (telegramBot) {
     if (!userText) return;
 
     if (userText === '/start') {
-      return telegramBot.sendMessage(chatId, "🌌 Namaste! Main Brahmand AI Bot (GPT-OSS-120B Powered) hoon.\n\nMain aapke sawalon ke jawab, Web Search, Website Scraping aur HD AI Images generate kar sakta hoon. Kuch bhi poochhein!");
+      const opts = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🕉️ Gita Shloka", callback_data: "get_shloka" },
+              { text: "📅 Daily Panchang", callback_data: "get_panchang" }
+            ],
+            [
+              { text: "🪔 Create Poster", callback_data: "create_poster" },
+              { text: "🔍 Help & Search", callback_data: "help_search" }
+            ]
+          ]
+        }
+      };
+      return telegramBot.sendMessage(chatId, "🌌 *Namaste! Main Brahmand AI Bot hoon.*\n\nMain aapki sahayata ke liye taiyar hoon. Rojana ka Panchang dekhne, Gita Shloka padhne ya koi bhi shubh kam ke liye niche diye buttons par click karein ya type karein!", { ...opts, parse_mode: 'Markdown' });
     }
 
     try {
@@ -180,6 +204,33 @@ if (telegramBot) {
       telegramBot.sendMessage(chatId, "⚠️ Maaf kijiye, kuch error aa gaya. Kripya thodi der baad try karein.").catch(() => { });
     }
   });
+
+  // Handle Callback Queries (Button Clicks)
+  telegramBot.on('callback_query', async (callbackQuery) => {
+    const message = callbackQuery.message;
+    const chatId = message.chat.id;
+    const action = callbackQuery.data;
+
+    try {
+      telegramBot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+
+      if (action === 'get_shloka') {
+        const shloka = getRandomGitaShloka();
+        const responseText = `🕉️ *Bhagavad Gita Shloka*\n\n*Verse:*\n_${shloka.verse}_\n\n*Transliteration:*\n_${shloka.transliteration}_\n\n*English Translation:*\n"${shloka.translation}"\n\n*Hindi Meaning (Hinglish):*\n${shloka.explanation}`;
+        await telegramBot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
+      } else if (action === 'get_panchang') {
+        const panchang = getDailyPanchang();
+        const responseText = `📅 *Daily Panchang - ${panchang.date}*\n\n*Tithi:* ${panchang.tithi}\n*Nakshatra:* ${panchang.nakshatra}\n*Yoga:* ${panchang.yoga}\n\n🌅 *Auspicious Timing:*\n${panchang.shubhMuhurat}\n\n⚠️ *Rahukaal (Inauspicious):*\n${panchang.rahukaal}`;
+        await telegramBot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
+      } else if (action === 'create_poster') {
+        await telegramBot.sendMessage(chatId, "🎨 *Create Festival Poster*\n\nPoster banane ke liye aap mujhe seedhe message send karein, jaise:\n`Draw a beautiful poster of Lord Shiva during Mahashivratri` aur main aapke liye turant AI poster generate kar dunga!", { parse_mode: 'Markdown' });
+      } else if (action === 'help_search') {
+        await telegramBot.sendMessage(chatId, "🔍 *Help & Search Capabilities*\n\nAap kisi bhi vishay par live internet search kar sakte hain. Bas type karein: `search latest news of Ayodhya Mandir` ya kisi bhi website ko scrape karne ke liye uska URL send karein!", { parse_mode: 'Markdown' });
+      }
+    } catch (err) {
+      console.error("Callback Query Error:", err.message);
+    }
+  });
 }
 
 // 🌐 Web API Endpoints
@@ -204,7 +255,16 @@ app.post('/api/chat', async (req, res) => {
 
     let extraContext = "";
 
-    if (isScrapeReq && urlMatch) {
+    const isShlokaReq = /shloka|gita|verse/i.test(message);
+    const isPanchangReq = /panchang|tithi|muhurat|nakshatra/i.test(message);
+
+    if (isShlokaReq) {
+       const shloka = getRandomGitaShloka();
+       extraContext = `\n\n[CURATED GITA SHLOKA]:\nVerse: ${shloka.verse}\nTranslation: ${shloka.translation}\nExplanation: ${shloka.explanation}\nIntegrate this shloka or refer to it to answer the user beautifully.`;
+    } else if (isPanchangReq) {
+       const panchang = getDailyPanchang();
+       extraContext = `\n\n[DYNAMIC DAILY PANCHANG DATA]:\nDate: ${panchang.date}\nTithi: ${panchang.tithi}\nNakshatra: ${panchang.nakshatra}\nYoga: ${panchang.yoga}\nShubh Muhurat: ${panchang.shubhMuhurat}\nRahukaal: ${panchang.rahukaal}\nUse this Panchang context to answer the user's request.`;
+    } else if (isScrapeReq && urlMatch) {
       let targetUrl = urlMatch[0];
       if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
       const scrapedData = await scrapeWebsite(targetUrl);
