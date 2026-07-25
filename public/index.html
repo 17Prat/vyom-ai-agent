@@ -462,7 +462,7 @@
       <div class="input-section">
         <div class="pill-input-wrapper">
           <textarea class="pill-textarea" id="userInput" placeholder="Ask anything" rows="1" onkeydown="handleKeyDown(event)"></textarea>
-          <button class="black-circle-btn" onclick="sendMessage()">
+          <button class="black-circle-btn" id="sendBtn" onclick="sendMessage()">
             <i class="fa-solid fa-arrow-up"></i>
           </button>
         </div>
@@ -475,6 +475,31 @@
   <script>
     let currentSessionId = null;
     let sessions = JSON.parse(localStorage.getItem('brahmand_sessions') || '[]');
+    let activeAbortController = null;
+
+    function setGeneratingState(isGenerating) {
+      const sendBtn = document.getElementById('sendBtn');
+      if (!sendBtn) return;
+      if (isGenerating) {
+        sendBtn.innerHTML = `<i class="fa-solid fa-square" style="font-size: 0.85rem;"></i>`;
+        sendBtn.setAttribute('onclick', 'stopGeneration()');
+        sendBtn.title = 'Stop generating';
+      } else {
+        sendBtn.innerHTML = `<i class="fa-solid fa-arrow-up"></i>`;
+        sendBtn.setAttribute('onclick', 'sendMessage()');
+        sendBtn.title = 'Send message';
+      }
+    }
+
+    function stopGeneration() {
+      if (activeAbortController) {
+        activeAbortController.abort();
+        activeAbortController = null;
+      }
+      removeLoading();
+      setGeneratingState(false);
+      appendMessage('🛑 *Generation stopped by user.*', 'bot');
+    }
 
     async function startNewSession() {
       try {
@@ -639,6 +664,9 @@
 
       appendLoadingStatus('Initializing Smart Orchestrator...');
 
+      activeAbortController = new AbortController();
+      setGeneratingState(true);
+
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -646,7 +674,8 @@
           body: JSON.stringify({ 
             message, 
             sessionId: currentSessionId
-          })
+          }),
+          signal: activeAbortController.signal
         });
 
         if (!response.body) {
@@ -672,6 +701,8 @@
               if (chunk.error) {
                 removeLoading();
                 appendMessage('Error: ' + chunk.error, 'bot');
+                setGeneratingState(false);
+                activeAbortController = null;
                 return;
               }
 
@@ -699,9 +730,16 @@
           }
         }
       } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log('Fetch request aborted successfully.');
+          return; // already handled in stopGeneration()
+        }
         removeLoading();
         console.error("Fetch/Stream error:", err);
         appendMessage('Connection Error: Agent backend se update stream karne mein failed.', 'bot');
+      } finally {
+        setGeneratingState(false);
+        activeAbortController = null;
       }
     }
 
@@ -1042,7 +1080,10 @@
     function handleKeyDown(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        sendMessage();
+        const sendBtn = document.getElementById('sendBtn');
+        if (sendBtn && sendBtn.getAttribute('onclick') === 'sendMessage()') {
+          sendMessage();
+        }
       }
     }
 

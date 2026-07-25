@@ -12,11 +12,20 @@ import { searchWeb } from './services/searchService.js';
 import { scrapeWebsite } from './services/scrapeService.js';
 import { generatePosterImage } from './services/mediaService.js';
 import { listSkills, readSkill } from './utils/skillLoader.js';
+import { publishInstagramPhoto, getInstagramRecentMedia, getInstagramProfileInfo } from './services/instagramService.js';
 import { toolsDefinition } from './tools.js';
 import * as orchestrator from './utils/orchestrator.js';
 import { SmartResponseController } from './core/SmartResponseController.js';
 
 const smartController = new SmartResponseController();
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('⚠️ Unhandled Promise Rejection (Caught globally):', reason.message || reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception (Caught globally):', error.message || error);
+});
 
 dotenv.config();
 
@@ -69,6 +78,11 @@ const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
+// Second Groq key — used as automatic backup when Key 1 hits daily 429 limit
+const groq2 = process.env.GROQ_API_KEY_2
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY_2 })
+  : null;
+
 
 
 function loadSkills() {
@@ -118,6 +132,21 @@ const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मां�
 - You have an exceptional memory for context. Read the conversational history and adapt your responses accordingly.
 - Never state "I am an AI" or "I am a language model" unless directly asked. Just be helpful.
 - Avoid robotic disclaimers. If you don't know something, state it naturally without apologizing profusely.
+
+### TOOL PROTOCOL:
+- You have access to several powerful tools:
+  - 'list_skills': Lists all available skill files (.md).
+  - 'read_skill': Reads the content of a specific skill.
+  - 'search_web': Searches the web for live information.
+  - 'scrape_website': Extracts clean text from web pages.
+  - 'generate_image': Generates an image based on a descriptive prompt.
+  - 'get_instagram_posts': Fetch recent posts (with likes, comments, caption, date) from ANY Instagram account. Accepts optional 'username' parameter (defaults to your account). Works without login! Example: get_instagram_posts({username: "its_pooja_067_"})
+  - 'get_instagram_profile': Fetch profile details (bio, followers, following, posts count) from ANY Instagram account. Accepts optional 'username' parameter. Works without login! Example: get_instagram_profile({username: "vishal_y_24"})
+  - 'post_to_instagram': Publishes a photo post to Instagram. Requires login (CAPTCHA may block).
+- You MUST use these tools creatively and autonomously. Understand commands in HINGLISH/Hindi/English mixed language naturally - e.g., "Mera feed fetch karke dikhao", "isko check karo", "uski latest post dekho", "kya daala hai usne".
+- If user asks about THEIR feed/profile, call the tool WITHOUT username (defaults to their account).
+- If user asks about ANOTHER account (by username), pass the username parameter.
+- If user asks to post/upload, call 'post_to_instagram'.
 
 ### DECISION-MAKING PROTOCOL:
 - If a user asks a simple question, give a direct, natural answer.
@@ -200,77 +229,64 @@ async function callGateway(messages, temperature, modelId, tools = null) {
 }
 
 async function callLLM(messages, temperature = 0.3, targetModel = 'auto', tools = null) {
-  // Resolve Groq model key
-  const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
-
-  // ✅ PRIMARY: Groq SDK (fast, reliable, always works)
-  if (groq) {
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      console.log(`🔄 Retry ${attempt}/${maxRetries} for LLM call...`);
+      await new Promise(r => setTimeout(r, attempt * 1000));
+    }
     try {
-      console.log(`🤖 Groq → ${groqModelId}`);
-      const params = {
-        messages,
-        model: groqModelId,
-        temperature,
-        max_tokens: 2048,
-      };
-      if (tools) {
-        params.tools = tools;
-        params.tool_choice = 'auto';
-      }
-      const completion = await groq.chat.completions.create(params);
-      const message = completion.choices[0].message;
-      if (message) {
-        return { 
-          text: message.content || '', 
-          tool_calls: message.tool_calls || null, 
-          model: `Groq (${groqModelId})` 
-        };
-      }
+      return await callLLMOnce(messages, temperature, targetModel, tools);
     } catch (err) {
-      console.warn(`Groq primary failed: ${err.message}`);
-      
-      // Try fallback Groq model if primary fails
-      if (groqModelId !== GROQ_MODELS.default) {
-        try {
-          console.log(`🤖 Groq fallback → ${GROQ_MODELS.default}`);
-          const params = {
-            messages,
-            model: GROQ_MODELS.default,
-            temperature,
-            max_tokens: 2048,
-          };
-          if (tools) {
-            params.tools = tools;
-            params.tool_choice = 'auto';
-          }
-          const completion = await groq.chat.completions.create(params);
-          const message = completion.choices[0].message;
-          if (message) {
-            return { 
-              text: message.content || '', 
-              tool_calls: message.tool_calls || null, 
-              model: `Groq (${GROQ_MODELS.default})` 
-            };
-          }
-        } catch (err2) {
-          console.warn(`Groq fallback also failed: ${err2.message}`);
-        }
-      }
+      console.warn(`LLM attempt ${attempt + 1} failed: ${err.message}`);
+      if (attempt === maxRetries) throw err;
+    }
+  }
+}
+
+async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', tools = null) {
+  const cerebrasModelId = targetModel === 'fast' ? 'zai-glm-4.7' : 'gpt-oss-120b';
+
+  if (cerebras) {
+    try {
+      console.log(`🚀 Cerebras Primary → ${cerebrasModelId}`);
+      const params = {
+        messages, model: cerebrasModelId, temperature, max_tokens: 2048,
+      };
+      if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
+      const completion = await cerebras.chat.completions.create(params);
+      const m = completion.choices[0].message;
+      if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: `Cerebras (${cerebrasModelId})` };
+    } catch (err) { console.warn(`Cerebras failed: ${err.message}`); }
+  }
+
+  const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
+  for (const [client, label, models] of [
+    [groq, 'Groq', [groqModelId, GROQ_MODELS.default]],
+    [groq2, 'Groq Key2', [groqModelId, GROQ_MODELS.default]]
+  ]) {
+    if (!client) continue;
+    for (const model of [...new Set(models)]) {
+      try {
+        console.log(`🤖 ${label} → ${model}`);
+        const params = { messages, model, temperature, max_tokens: 2048 };
+        if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
+        const completion = await client.chat.completions.create(params);
+        const m = completion.choices[0].message;
+        if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: `${label} (${model})` };
+      } catch (err) { console.warn(`${label} ${model} failed: ${err.message}`); }
     }
   }
 
-  // 🌐 OPTIONAL UPGRADE: LLM Gateway (only if Groq fails and key exists)
   if (process.env.LLM_GATEWAY_API_KEY) {
     const gatewayModelId = GATEWAY_MODELS[targetModel] || GATEWAY_MODELS.smart;
     try {
-      console.log(`🌐 Gateway upgrade → ${gatewayModelId}`);
+      console.log(`🌐 Gateway Fallback → ${gatewayModelId}`);
       return await callGateway(messages, temperature, gatewayModelId, tools);
-    } catch (err) {
-      console.warn(`Gateway also failed: ${err.message}`);
-    }
+    } catch (err) { console.warn(`Gateway failed: ${err.message}`); }
   }
 
-  throw new Error('All AI providers failed. Check GROQ_API_KEY in .env');
+  throw new Error('All AI providers failed. Check CEREBRAS_API_KEY, GROQ_API_KEY, or LLM_GATEWAY_API_KEY in .env');
 }
 
 async function executeToolCall(toolCall, writeStreamChunk) {
@@ -282,6 +298,9 @@ async function executeToolCall(toolCall, writeStreamChunk) {
     } catch (e) {
       args = {};
     }
+  }
+  if (!args || typeof args !== 'object') {
+    args = {};
   }
   console.log(`🔨 Executing tool: ${functionName} with args: ${JSON.stringify(args)}`);
   
@@ -301,6 +320,12 @@ async function executeToolCall(toolCall, writeStreamChunk) {
         return await scrapeWebsite(args.url);
       case 'generate_image':
         return await generatePosterImage(args.prompt);
+      case 'get_instagram_posts':
+        return await getInstagramRecentMedia(args.username || 'pratham_patel_18');
+      case 'get_instagram_profile':
+        return await getInstagramProfileInfo(args.username || 'pratham_patel_18');
+      case 'post_to_instagram':
+        return await publishInstagramPhoto(args.imageUrl, args.caption);
       default:
         return `Error: Unknown function ${functionName}`;
     }
@@ -315,12 +340,19 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
   let currentIteration = 0;
   let finalModelUsed = modelName;
   let generatedImageUrl = null;
+  const executedCalls = new Set();
 
   while (currentIteration < maxIterations) {
-    const response = await callLLM(messages, temperature, modelName, toolsDefinition);
+    let response;
+    try {
+      response = await callLLM(messages, temperature, modelName, toolsDefinition);
+    } catch (err) {
+      console.error(`Agent loop LLM failed at iteration ${currentIteration}: ${err.message}`);
+      if (currentIteration === 0) throw err;
+      return { text: messages.length > 1 ? 'Agent encountered an error but partial results available.' : 'AI service unavailable. Please try again.', model: finalModelUsed, imageUrl: generatedImageUrl };
+    }
     finalModelUsed = response.model;
     
-    // Standardize assistant message for history
     const assistantMsg = {
       role: 'assistant',
       content: response.text || '',
@@ -330,7 +362,21 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
 
     if (response.tool_calls && response.tool_calls.length > 0) {
       for (const toolCall of response.tool_calls) {
-        const result = await executeToolCall(toolCall, writeStreamChunk);
+        const callKey = `${toolCall.function.name}:${toolCall.function.arguments || ''}`;
+        let result;
+        
+        if (executedCalls.has(callKey)) {
+          console.log(`⚠️ Tool call duplicate detected: ${callKey}. Bypassing execution.`);
+          result = `Info: You have already called this tool with these exact arguments in this turn. It returned the same result. Do NOT call it again. Please construct your final response based on the data you currently have.`;
+        } else {
+          executedCalls.add(callKey);
+          try {
+            result = await executeToolCall(toolCall, writeStreamChunk);
+          } catch (toolErr) {
+            console.error(`Tool ${toolCall.function.name} crashed: ${toolErr.message}`);
+            result = `Error: Tool "${toolCall.function.name}" failed to execute. ${toolErr.message}`;
+          }
+        }
 
         if (toolCall.function.name === 'generate_image') {
           generatedImageUrl = result;
@@ -345,19 +391,11 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
       }
       currentIteration++;
     } else {
-      return {
-        text: response.text,
-        model: finalModelUsed,
-        imageUrl: generatedImageUrl
-      };
+      return { text: response.text, model: finalModelUsed, imageUrl: generatedImageUrl };
     }
   }
 
-  return { 
-    text: "Reached maximum iterations without final answer.", 
-    model: finalModelUsed, 
-    imageUrl: generatedImageUrl 
-  };
+  return { text: "Reached maximum iterations without final answer.", model: finalModelUsed, imageUrl: generatedImageUrl };
 }
 
 // Smart model router — maps query context to the best Gateway model key
@@ -834,8 +872,9 @@ app.post('/api/chat', async (req, res) => {
     // Trigger Autonomous Tool Creation check
     checkAndCreateTool(message);
 
-    // 1. Check Similarity Cache
-    const cacheMatch = orchestrator.findInCache(db, message);
+    // 1. Check Similarity Cache (Bypassed for dynamic Instagram/live social queries)
+    const isInstagramQuery = ['instagram', 'ig ', 'ig_', 'feed', 'post', 'upload'].some(kw => message.toLowerCase().includes(kw));
+    const cacheMatch = isInstagramQuery ? null : orchestrator.findInCache(db, message);
     if (cacheMatch) {
       writeStreamChunk({ type: 'status', text: '🎯 Similarity cache hit! Fetching instant response...' });
       // Short delay for realistic UI transition
@@ -999,7 +1038,10 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageUrl = agentResult.imageUrl;
 
     // 7. Quality check & Revision loop
-    let qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
+    let qualityScore = 10;
+    try {
+      qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
+    } catch { qualityScore = 10; }
 
     let maxRevisions = 0;
     if (speedMode === 'FAST') maxRevisions = 3;
@@ -1013,29 +1055,32 @@ app.post('/api/chat', async (req, res) => {
       writeStreamChunk({ type: 'status', text: `Quality Score: ${qualityScore}/10 is below threshold. Refining response... (Attempt ${revisionAttempt}/${maxRevisions})` });
       
       const revisionMessages = [
-        { 
-          role: 'system', 
-          content: `${systemPrompt}\n\n### QUALITY CHECK FAILURE ###\nYour previous response was rated ${qualityScore}/10. Please write a revised version. Address all details and correct the formatting.` 
-        },
+        { role: 'system', content: `${systemPrompt}\n\n### QUALITY CHECK FAILURE ###\nYour previous response was rated ${qualityScore}/10. Please write a revised version. Address all details and correct the formatting.` },
         ...cleanHistory,
         { role: 'user', content: message },
         { role: 'assistant', content: finalResponseText },
         { role: 'user', content: 'Provide the revised response.' }
       ];
 
-      const revisedResult = await callLLM(revisionMessages, temperature, routedModelName);
-      finalResponseText = revisedResult.text;
-      modelUsed = revisedResult.model;
+      try {
+        const revisedResult = await callLLM(revisionMessages, temperature, routedModelName);
+        finalResponseText = revisedResult.text || finalResponseText;
+        modelUsed = revisedResult.model;
+      } catch { break; }
 
-      qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
+      try {
+        qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
+      } catch { break; }
     }
 
-    if (speedMode === 'SLOW' && qualityScore < 6) {
-      revisionSuggested = true;
-      writeStreamChunk({ type: 'status', text: `Quality Score: ${qualityScore}/10 is low, but proceeding to save response time.` });
-    } else {
-      writeStreamChunk({ type: 'status', text: `Quality Check passed: ${qualityScore}/10.` });
-    }
+    try {
+      if (speedMode === 'SLOW' && qualityScore < 6) {
+        revisionSuggested = true;
+        writeStreamChunk({ type: 'status', text: `Quality Score: ${qualityScore}/10 is low, but proceeding to save response time.` });
+      } else {
+        writeStreamChunk({ type: 'status', text: `Quality Check passed: ${qualityScore}/10.` });
+      }
+    } catch (e) {}
 
     // Append explainable reasoning to the response text for transparency
     const explainableReasoning = `\n\n<details>\n<summary>Why This Approach 🧠</summary>\n\n- **Routed Model**: \`${modelUsed}\` (${selectionReasoning})\n- **Question Type**: \`${chatQuestionTypeCategory.toUpperCase()}\`\n- **User Expertise**: \`${detectedExpertise.toUpperCase()}\`\n- **Detected Emotion**: \`${detectedEmotion.toUpperCase()}\`\n- **Detected Language**: \`${detectedLanguage.toUpperCase()}\`\n- **Memory Preferences**: ${prefTone || prefLength ? `Length: ${prefLength || 'default'}, Tone: ${prefTone || 'default'}` : 'None (using defaults)'}\n\n</details>`;
@@ -1065,17 +1110,15 @@ app.post('/api/chat', async (req, res) => {
     saveMessage(sessionId, 'user', message);
     saveMessage(sessionId, 'assistant', finalResponseText);
 
-    // Generate Smart Title for new sessions
     let sessionTitle = null;
     if (history.length === 0) {
       try {
         const titlePrompt = [{ role: 'user', content: `Summarize this in 2 to 4 words for a chat title: "${message}". Reply ONLY with the words, no quotes, no explanations.` }];
         const titleRes = await callLLM(titlePrompt, 0.3, 'fast');
-        sessionTitle = titleRes.text.trim();
+        if (titleRes?.text) sessionTitle = titleRes.text.trim();
       } catch (e) {}
     }
 
-    // Send final payload
     writeStreamChunk({
       type: 'done',
       success: true,

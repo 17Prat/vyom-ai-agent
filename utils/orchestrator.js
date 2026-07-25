@@ -101,6 +101,10 @@ export function saveToCache(db, query, responseText, modelName, imageUrl) {
 // Evaluate Response Quality (returns a score from 1-10)
 export async function evaluateQuality(callLLM, userQuery, responseText, speedMode) {
   try {
+    if (responseText.includes("Instagram Security Block") || responseText.includes("Successfully published to Instagram") || responseText.includes("Failed to execute tool") || responseText.includes("Error executing")) {
+      console.log("⭐ Tool status/error response detected. Bypassing quality evaluation with score 10.");
+      return 10;
+    }
     console.log(`🔍 Evaluating response quality... Speed Mode: ${speedMode}`);
     
     // For SLOW model speed, we want the quality check to be as fast as possible

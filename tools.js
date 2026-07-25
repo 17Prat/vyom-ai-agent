@@ -78,5 +78,60 @@ export const toolsDefinition = [
         required: ["prompt"],
       },
     },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_instagram_posts",
+      description: "Fetch the most recent posts from any Instagram account (username required). Includes likes, comments, caption, and date.",
+      parameters: {
+        type: "object",
+        properties: {
+          username: {
+            type: "string",
+            description: "Instagram username to fetch posts from (e.g. 'vishal_y_24'). Leave empty for own account.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "post_to_instagram",
+      description: "Publishes a photo post directly to your Instagram account feed.",
+      parameters: {
+        type: "object",
+        properties: {
+          imageUrl: {
+            type: "string",
+            description: "Direct URL of the image (JPEG/PNG) to post.",
+          },
+          caption: {
+            type: "string",
+            description: "The caption to go with the image.",
+          },
+        },
+        required: ["imageUrl", "caption"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_instagram_profile",
+      description: "Fetch profile details from any Instagram account (username required). Includes biography, full name, follower/following counts, posts count, and latest post links.",
+      parameters: {
+        type: "object",
+        properties: {
+          username: {
+            type: "string",
+            description: "Instagram username to fetch profile of (e.g. 'its_pooja_067_'). Leave empty for own account.",
+          },
+        },
+        required: [],
+      },
+    },
   }
 ];

@@ -4,23 +4,19 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import axios from "axios";
+import { IgApiClient } from "instagram-private-api";
 import dotenv from "dotenv";
 
-// Load environment variables
 dotenv.config();
 
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN;
-const IG_ACCOUNT_ID = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-const GRAPH_API_VERSION = 'v20.0';
-const BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+const IG_USERNAME = process.env.IG_USERNAME;
+const IG_PASSWORD = process.env.IG_PASSWORD;
 
-if (!INSTAGRAM_ACCESS_TOKEN || !IG_ACCOUNT_ID) {
-  console.error("Missing INSTAGRAM_ACCESS_TOKEN or INSTAGRAM_BUSINESS_ACCOUNT_ID in environment variables.");
+if (!IG_USERNAME || !IG_PASSWORD) {
+  console.error("Missing IG_USERNAME or IG_PASSWORD in environment variables.");
   process.exit(1);
 }
 
-// Create MCP Server
 const server = new Server(
   {
     name: "brahmand-instagram-connector",
@@ -33,13 +29,31 @@ const server = new Server(
   }
 );
 
-// Register Tools
+async function login() {
+  const ig = new IgApiClient();
+  ig.state.generateDevice(IG_USERNAME);
+  await ig.simulate.preLoginFlow();
+  const user = await ig.account.login(IG_USERNAME, IG_PASSWORD);
+  process.nextTick(() =>
+    ig.simulate.postLoginFlow().catch(() => {})
+  );
+  return { ig, user };
+}
+
+function handleError(error) {
+  const msg = error.message?.toLowerCase() || "";
+  if (msg.includes("checkpoint") || msg.includes("challenge") || msg.includes("467") || msg.includes("400") || msg.includes("verification")) {
+    return "Instagram Security Block: Instagram requires a login confirmation. Please open your Instagram app on your phone, look for the 'Was This You?' security popup, click 'This Was Me', and then retry this query in a moment.";
+  }
+  return error.message || "Unknown error";
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: "get_instagram_profile",
-        description: "Fetch the basic profile information, followers count, and bio of the connected Instagram Business account.",
+        description: "Fetch your Instagram profile details including username, full name, bio, follower count, following count, and media count.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -47,7 +61,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_recent_posts",
-        description: "Fetch the most recent posts (up to 10) from the Instagram account, including like counts and comments counts.",
+        description: "Fetch your most recent Instagram posts (up to 10) with caption, like count, and comment count.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -55,7 +69,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "publish_instagram_post",
-        description: "Publish a new image post to Instagram. Requires a direct image URL (must be public) and a caption.",
+        description: "Publish a new photo post to Instagram. Requires a public image URL and a caption.",
         inputSchema: {
           type: "object",
           properties: {
@@ -75,31 +89,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Handle Tool Calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (request.params.name) {
       case "get_instagram_profile": {
-        const url = `${BASE_URL}/${IG_ACCOUNT_ID}?fields=id,username,followers_count,follows_count,media_count,name,biography,profile_picture_url&access_token=${INSTAGRAM_ACCESS_TOKEN}`;
-        const response = await axios.get(url);
+        const { ig, user } = await login();
+        const accountDetails = await ig.account.currentUser();
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(response.data, null, 2),
+              text: JSON.stringify({
+                username: accountDetails.username,
+                full_name: accountDetails.full_name,
+                biography: accountDetails.biography,
+                follower_count: accountDetails.follower_count,
+                following_count: accountDetails.following_count,
+                media_count: accountDetails.media_count,
+                is_private: accountDetails.is_private || false,
+              }, null, 2),
             },
           ],
         };
       }
 
       case "get_recent_posts": {
-        const url = `${BASE_URL}/${IG_ACCOUNT_ID}/media?fields=id,caption,media_type,media_url,like_count,comments_count,timestamp&limit=10&access_token=${INSTAGRAM_ACCESS_TOKEN}`;
-        const response = await axios.get(url);
+        const { ig, user } = await login();
+        const userFeed = ig.feed.user(user.pk);
+        const items = await userFeed.items();
+        const posts = items.slice(0, 10).map(item => ({
+          id: item.id,
+          caption: item.caption?.text || "No caption",
+          like_count: item.like_count,
+          comment_count: item.comment_count,
+          media_type: item.media_type === 1 ? "image" : item.media_type === 2 ? "video" : "carousel",
+          url: `https://instagram.com/p/${item.code}`,
+        }));
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(response.data, null, 2),
+              text: JSON.stringify(posts, null, 2),
             },
           ],
         };
@@ -107,41 +137,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "publish_instagram_post": {
         const { imageUrl, caption } = request.params.arguments;
-        
-        // Step 1: Create media container
-        const createMediaUrl = `${BASE_URL}/${IG_ACCOUNT_ID}/media`;
-        const createParams = new URLSearchParams({
-          image_url: imageUrl,
+        if (!imageUrl || !imageUrl.startsWith("http")) {
+          throw new Error("Please provide a valid absolute image URL (starting with http:// or https://).");
+        }
+
+        const { ig } = await login();
+
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const publishResult = await ig.publish.photo({
+          file: buffer,
           caption: caption,
-          access_token: INSTAGRAM_ACCESS_TOKEN
         });
-        
-        let containerRes;
-        try {
-          containerRes = await axios.post(createMediaUrl, createParams);
-        } catch (error) {
-          throw new Error(`Failed to create media container: ${error.response?.data?.error?.message || error.message}`);
-        }
-
-        const creationId = containerRes.data.id;
-        if (!creationId) {
-          throw new Error("Failed to get creation_id from Instagram.");
-        }
-
-        // Step 2: Publish media container
-        const publishUrl = `${BASE_URL}/${IG_ACCOUNT_ID}/media_publish`;
-        const publishParams = new URLSearchParams({
-          creation_id: creationId,
-          access_token: INSTAGRAM_ACCESS_TOKEN
-        });
-
-        const publishRes = await axios.post(publishUrl, publishParams);
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully published Instagram post! Post ID: ${publishRes.data.id}`,
+              text: JSON.stringify({
+                success: true,
+                media_id: publishResult.media.id,
+                url: `https://instagram.com/p/${publishResult.media.code}`,
+              }, null, 2),
             },
           ],
         };
@@ -151,7 +172,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${request.params.name}`);
     }
   } catch (error) {
-    const errorMsg = error.response?.data?.error?.message || error.message;
+    const errorMsg = handleError(error);
     return {
       content: [
         {
@@ -164,7 +185,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Start Stdio Server Transport
 async function run() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
