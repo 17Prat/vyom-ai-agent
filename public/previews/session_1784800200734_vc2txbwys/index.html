@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium Imitation Jewellery</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #333;
+      color: #fff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background-color: #444;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    }
+    .header {
+      background-color: #555;
+      padding: 20px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+    .collections {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .collection {
+      margin: 20px;
+      width: calc(33.33% - 20px);
+      background-color: #666;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    }
+    .collection img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-radius: 10px 10px 0 0;
+    }
+    .collection h2 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .contact-form {
+      background-color: #555;
+      padding: 20px;
+      border-radius: 10px;
+    }
+    .contact-form label {
+      display: block;
+      margin-bottom: 10px;
+    }
+    .contact-form input, .contact-form textarea {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      border: none;
+      border-radius: 10px;
+      background-color: #666;
+      color: #fff;
+    }
+    .contact-form button {
+      background-color: #777;
+      color: #fff;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .contact-form button:hover {
+      background-color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Premium Imitation Jewellery</h1>
+      <p>Discover our latest collections</p>
+    </div>
+    <div class="collections">
+      <div class="collection">
+        <img src="https://via.placeholder.com/300" alt="Collection 1">
+        <h2>Collection 1</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed sit amet nulla auctor, vestibulum magna sed, convallis ex.</p>
+      </div>
+      <div class="collection">
+        <img src="https://via.placeholder.com/300" alt="Collection 2">
+        <h2>Collection 2</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed sit amet nulla auctor, vestibulum magna sed, convallis ex.</p>
+      </div>
+      <div class="collection">
+        <img src="https://via.placeholder.com/300" alt="Collection 3">
+        <h2>Collection 3</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed sit amet nulla auctor, vestibulum magna sed, convallis ex.</p>
+      </div>
+    </div>
+    <div class="contact-form">
+      <h2>Get in Touch</h2>
+      <form>
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name">
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email">
+        <label for="message">Message:</label>
+        <textarea id="message" name="message"></textarea>
+        <button>Send</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    const form = document.querySelector('form');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.querySelector('#name').value;
+      const email = document.querySelector('#email').value;
+      const message = document.querySelector('#message').value;
+      console.log(name, email, message);
+      // Send data to server or API
+    });
+  </script>
+</body>
+</html>

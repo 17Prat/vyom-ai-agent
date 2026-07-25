@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium Imitation Jewellery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #d4af37;        /* Theme color (e.g. Gold) */
+      --primary-light: #f3e5ab;
+      --dark: #0f0f16;           /* Premium deep background */
+      --light: #f5f5fa;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+    }
+    body {
+      background-color: var(--dark);
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .header {
+      background-image: url('https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=1200&q=80');
+      background-size: cover;
+      background-position: center;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .card:hover {
+      transform: translateY(-8px);
+      border-color: var(--primary);
+      box-shadow: 0 15px 35px rgba(212, 175, 55, 0.15);
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>Premium Imitation Jewellery</h1>
+  </header>
+  <section class="collections">
+    <h2>Our Collections</h2>
+    <div class="card">
+      <h3>Gold Necklace</h3>
+      <img src="https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=600&q=80" alt="Gold Necklace">
+      <p>Our gold necklace is made with high-quality materials and is perfect for any occasion.</p>
+    </div>
+    <div class="card">
+      <h3>Diamond Earrings</h3>
+      <img src="https://images.unsplash.com/photo-1635767798638-3e25273a8236?auto=format&fit=crop&w=600&q=80" alt="Diamond Earrings">
+      <p>Our diamond earrings are a must-have for any jewellery collection.</p>
+    </div>
+    <div class="card">
+      <h3>Pearl Ring</h3>
+      <img src="https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&w=600&q=80" alt="Pearl Ring">
+      <p>Our pearl ring is a classic and elegant piece of jewellery.</p>
+    </div>
+  </section>
+  <section class="about">
+    <h2>About Us</h2>
+    <p>We are a premium imitation jewellery brand that offers high-quality and affordable jewellery pieces.</p>
+  </section>
+  <section class="contact">
+    <h2>Get in Touch</h2>
+    <form>
+      <input type="text" placeholder="Name">
+      <input type="email" placeholder="Email">
+      <textarea placeholder="Message"></textarea>
+      <button>Send</button>
+    </form>
+  </section>
+  <script>
+    // Add interactive logic here
+  </script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Brahmand</title>
-
+  <link rel="icon" type="image/jpeg" href="/appicon.jpeg">
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -349,6 +349,51 @@
       border: none;
       flex-shrink: 0;
     }
+
+    /* ─── SUGGESTION CHIPS ─── */
+    .followup-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 8px;
+      border-top: 1px dashed #E5E5E5;
+    }
+
+    .followup-pill {
+      background-color: #F3F4F6;
+      border: 1px solid #E5E7EB;
+      border-radius: 18px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      color: #374151;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      user-select: none;
+      outline: none;
+    }
+
+    .followup-pill:hover {
+      background-color: #E5E7EB;
+      border-color: #D1D5DB;
+      color: #111827;
+      transform: translateY(-1px);
+    }
+
+    .followup-pill:active {
+      transform: translateY(0);
+    }
+
+    .option-tab:hover {
+      background-color: #E2E8F0 !important;
+    }
+    .option-tab.active:hover {
+      background-color: #FFFFFF !important;
+    }
   </style>
 </head>
 <body>
@@ -444,6 +489,46 @@
     startNewSession();
     renderSidebarChats();
 
+    let typingTimer;
+    let preloadedCacheMatch = null;
+    const typingInterval = 400; // 400ms debounce delay
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const inputEl = document.getElementById('userInput');
+      if (inputEl) {
+        inputEl.addEventListener('input', () => {
+          clearTimeout(typingTimer);
+          const text = inputEl.value.trim();
+          if (text.length >= 4) {
+            typingTimer = setTimeout(() => {
+              checkPredictiveCache(text);
+            }, typingInterval);
+          } else {
+            preloadedCacheMatch = null;
+          }
+        });
+      }
+    });
+
+    async function checkPredictiveCache(text) {
+      try {
+        const res = await fetch('/api/typing-predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.success && data.match) {
+          console.log("⚡ Predictive pre-generation match found!", data);
+          preloadedCacheMatch = data;
+        } else {
+          preloadedCacheMatch = null;
+        }
+      } catch (err) {
+        console.error("Predictive cache fetch error:", err);
+      }
+    }
+
     function resetToHome() {
       document.getElementById('heroContainer').style.display = 'flex';
       document.getElementById('activeChatContainer').style.display = 'none';
@@ -452,10 +537,96 @@
       renderSidebarChats();
     }
 
+    // 🌟 Stream Status Logging Variables
+    let currentLoadingRow = null;
+    let loadingStatuses = [];
+
+    function appendLoadingStatus(initialText) {
+      removeLoading(); // Clean up if any
+      const feed = document.getElementById('activeChatContainer');
+      const row = document.createElement('div');
+      row.className = 'message-row';
+      row.id = 'loadingRow';
+      
+      row.innerHTML = `
+        <div class="msg-avatar bot">🌌</div>
+        <div class="msg-content" style="opacity: 0.85;">
+          <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; color: #4B5563; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-spinner fa-spin" style="color: #10A37F;"></i> 
+            <span>Smart Orchestrator Active</span>
+          </div>
+          <div id="orchestratorStatusList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: #6B7280; padding-left: 2px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 0.75rem;"></i>
+              <span>${escapeHtml(initialText)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+      feed.appendChild(row);
+      document.getElementById('chatView').scrollTop = document.getElementById('chatView').scrollHeight;
+      currentLoadingRow = row;
+      loadingStatuses = [initialText];
+    }
+
+    function updateLoadingStatus(newStatusText) {
+      if (!currentLoadingRow) return;
+      
+      // If the last status is the same, ignore it
+      if (loadingStatuses[loadingStatuses.length - 1] === newStatusText) return;
+      
+      loadingStatuses.push(newStatusText);
+      const listEl = document.getElementById('orchestratorStatusList');
+      if (listEl) {
+        // Change previous items icons to checkmarks
+        const items = listEl.querySelectorAll('div');
+        items.forEach(item => {
+          const icon = item.querySelector('i');
+          if (icon) {
+            icon.className = 'fa-solid fa-circle-check';
+            icon.style.color = '#10A37F';
+            icon.classList.remove('fa-spin');
+          }
+        });
+        
+        // Append new active status
+        const newDiv = document.createElement('div');
+        newDiv.style.display = 'flex';
+        newDiv.style.alignItems = 'center';
+        newDiv.style.gap = '8px';
+        newDiv.innerHTML = `
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 0.75rem;"></i>
+          <span>${escapeHtml(newStatusText)}</span>
+        `;
+        listEl.appendChild(newDiv);
+        document.getElementById('chatView').scrollTop = document.getElementById('chatView').scrollHeight;
+      }
+    }
+
+
+
     async function sendMessage() {
       const input = document.getElementById('userInput');
       const message = input.value.trim();
       if (!message) return;
+
+      // Check if we already have a pre-loaded predictive cache hit
+      if (preloadedCacheMatch && preloadedCacheMatch.response_text) {
+        document.getElementById('heroContainer').style.display = 'none';
+        const feed = document.getElementById('activeChatContainer');
+        feed.style.display = 'flex';
+        
+        appendMessage(message, 'user');
+        input.value = '';
+        saveSessionMessage(currentSessionId, message, 'user');
+        
+        const cachedRes = preloadedCacheMatch;
+        preloadedCacheMatch = null; // Clear cache reference
+        
+        appendMessage(cachedRes.response_text, 'bot', cachedRes.model_name, cachedRes.image_url, false, message);
+        saveSessionMessage(currentSessionId, cachedRes.response_text, 'bot', cachedRes.model_name, cachedRes.image_url, false, message);
+        return;
+      }
 
       document.getElementById('heroContainer').style.display = 'none';
       const feed = document.getElementById('activeChatContainer');
@@ -466,42 +637,89 @@
 
       saveSessionMessage(currentSessionId, message, 'user');
 
-      appendLoading();
+      appendLoadingStatus('Initializing Smart Orchestrator...');
 
       try {
-        const res = await fetch('/api/chat', {
+        const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, sessionId: currentSessionId })
+          body: JSON.stringify({ 
+            message, 
+            sessionId: currentSessionId
+          })
         });
-        const data = await res.json();
 
-        removeLoading();
+        if (!response.body) {
+          throw new Error('No readable response body returned from server.');
+        }
 
-        if (data.success) {
-          appendMessage(data.message, 'bot', data.model, data.imageUrl);
-          saveSessionMessage(currentSessionId, data.message, 'bot', data.model, data.imageUrl);
-        } else {
-          appendMessage('Error: ' + (data.error || 'Gadbad ho gayi'), 'bot');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep partial line in buffer
+
+          for (const line of lines) {
+            if (line.trim()) {
+              const chunk = JSON.parse(line);
+              
+              if (chunk.error) {
+                removeLoading();
+                appendMessage('Error: ' + chunk.error, 'bot');
+                return;
+              }
+
+              if (chunk.type === 'status') {
+                updateLoadingStatus(chunk.text);
+                
+                if (chunk.speedMode) {
+                  console.log('Classified speed mode:', chunk.speedMode);
+                }
+              } else if (chunk.type === 'done') {
+                removeLoading();
+                
+                // Format & display response
+                const contentText = chunk.message;
+                const isRevisionSuggested = chunk.revisionSuggested;
+                
+                appendMessage(contentText, 'bot', chunk.model, chunk.imageUrl, isRevisionSuggested, message);
+                saveSessionMessage(currentSessionId, contentText, 'bot', chunk.model, chunk.imageUrl, isRevisionSuggested, message, chunk.sessionTitle);
+                
+                if (chunk.averageLatencyMs) {
+                  console.log('Response latency:', (chunk.averageLatencyMs / 1000).toFixed(1) + 's');
+                }
+              }
+            }
+          }
         }
       } catch (err) {
         removeLoading();
-        appendMessage('Connection Error: Server running hai kya dekhna.', 'bot');
+        console.error("Fetch/Stream error:", err);
+        appendMessage('Connection Error: Agent backend se update stream karne mein failed.', 'bot');
       }
     }
 
-    function saveSessionMessage(sessId, text, sender, model = null, imageUrl = null) {
+    function saveSessionMessage(sessId, text, sender, model = null, imageUrl = null, revisionSuggested = false, originalQuery = '', sessionTitle = null) {
       let session = sessions.find(s => s.id === sessId);
       if (!session) {
         session = {
           id: sessId,
-          title: text.length > 28 ? text.substring(0, 28) + '...' : text,
+          title: sessionTitle || (text.length > 28 ? text.substring(0, 28) + '...' : text),
           pinned: false,
           messages: []
         };
         sessions.unshift(session);
+      } else if (sessionTitle && session.messages.length <= 2) {
+        // Update title if provided later on the first exchange
+        session.title = sessionTitle;
       }
-      session.messages.push({ text, sender, model, imageUrl });
+      session.messages.push({ text, sender, model, imageUrl, revisionSuggested, originalQuery });
       localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
       renderSidebarChats();
     }
@@ -579,28 +797,230 @@
       feed.style.display = 'flex';
       feed.innerHTML = '';
 
-      session.messages.forEach(m => appendMessage(m.text, m.sender, m.model, m.imageUrl));
+      session.messages.forEach(m => appendMessage(m.text, m.sender, m.model, m.imageUrl, m.revisionSuggested, m.originalQuery));
       renderSidebarChats();
     }
 
-    function appendMessage(text, sender, model = null, imageUrl = null) {
+    function escapeSingleQuotes(str) {
+      if (!str) return '';
+      return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // Auto-populates and sends interactive suggestion pill values
+    function sendFollowupText(text) {
+      const input = document.getElementById('userInput');
+      if (input) {
+        input.value = text;
+        sendMessage();
+      }
+    }
+
+    // Background revision trigger
+    async function triggerBackgroundRevision(btnEl, originalQuery, previousText, msgContentId) {
+      const panel = btnEl.closest('.revision-panel');
+      if (panel) {
+        panel.innerHTML = `
+          <div style="color: #475569; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+            <span>Improving response quality in background...</span>
+          </div>
+        `;
+        panel.style.backgroundColor = '#F1F5F9';
+        panel.style.borderColor = '#CBD5E1';
+        panel.style.color = '#475569';
+      }
+
+      try {
+        const res = await fetch('/api/revise', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: originalQuery,
+            previousResponse: previousText,
+            sessionId: currentSessionId
+          })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          const container = document.getElementById(msgContentId);
+          if (container) {
+            // Update the text body inside msg-content (might contain followups too)
+            const textBody = container.querySelector('.msg-text-body');
+            if (textBody) {
+              let rawText = data.message;
+              let followups = [];
+              const followupsRegex = /<followups>([\s\S]*?)<\/followups>/i;
+              const match = rawText.match(followupsRegex);
+              if (match) {
+                try { followups = JSON.parse(match[1].trim()); } catch (e) {}
+                rawText = rawText.replace(followupsRegex, '').trim();
+              }
+              
+              // Update markdown text
+              textBody.innerHTML = marked.parse(rawText);
+
+              // Render suggestions chips if any revised followups came back
+              if (followups && followups.length > 0) {
+                let existingContainer = container.querySelector('.followup-container');
+                if (existingContainer) existingContainer.remove();
+
+                const chipsDiv = document.createElement('div');
+                chipsDiv.className = 'followup-container';
+                followups.forEach(opt => {
+                  chipsDiv.innerHTML += `
+                    <button class="followup-pill" onclick="sendFollowupText('${escapeSingleQuotes(opt)}')">
+                      <i class="fa-solid fa-arrow-right-long" style="font-size: 0.72rem; color: #10A37F;"></i>
+                      <span>${escapeHtml(opt)}</span>
+                    </button>
+                  `;
+                });
+                container.appendChild(chipsDiv);
+              }
+            }
+            
+            // Remove the revision panel
+            const activePanel = container.querySelector('.revision-panel');
+            if (activePanel) activePanel.remove();
+            
+            // Update badge info
+            const badge = container.querySelector('.model-badge');
+            if (badge) {
+              badge.innerHTML = `<i class="fa-solid fa-check-double" style="color: #10A37F;"></i> Revised & Optimized by ${escapeHtml(data.model)}`;
+            }
+          }
+          
+          // Update in localStorage
+          let session = sessions.find(s => s.id === currentSessionId);
+          if (session) {
+            // Find the last assistant message
+            for (let i = session.messages.length - 1; i >= 0; i--) {
+              if (session.messages[i].sender === 'bot') {
+                session.messages[i].text = data.message;
+                session.messages[i].model = data.model;
+                session.messages[i].revisionSuggested = false; // cleared
+                break;
+              }
+            }
+            localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+          }
+        } else {
+          if (panel) {
+            panel.innerHTML = `<span style="color: #dc2626;"><i class="fa-solid fa-xmark"></i> Revision failed: ${data.error || 'Unknown error'}</span>`;
+          }
+        }
+      } catch (err) {
+        if (panel) {
+          panel.innerHTML = `<span style="color: #dc2626;"><i class="fa-solid fa-xmark"></i> Connection error during revision.</span>`;
+        }
+      }
+    }
+
+    function appendMessage(text, sender, model = null, imageUrl = null, revisionSuggested = false, originalQuery = '') {
       const feed = document.getElementById('activeChatContainer');
       const row = document.createElement('div');
       row.className = 'message-row';
 
       const avatarClass = sender === 'bot' ? 'bot' : 'user';
       const avatarIcon = sender === 'bot' ? `<img src="/appicon.jpeg" style="width:100%; height:100%; border-radius:50%; object-fit: cover;" />` : 'P';
-      const parsedContent = sender === 'bot' ? marked.parse(text) : `<p>${escapeHtml(text)}</p>`;
+
+      let rawText = text;
+      
+      // Extract follow-ups
+      let followups = [];
+      const followupsRegex = /<followups>([\s\S]*?)<\/followups>/i;
+      const match = rawText.match(followupsRegex);
+      if (match) {
+        try {
+          followups = JSON.parse(match[1].trim());
+        } catch (e) {
+          console.error("Failed to parse followups:", e.message);
+        }
+        rawText = rawText.replace(followupsRegex, '').trim();
+      }
+
+      // Extract thinking block (DeepSeek R1 style)
+      let thinkingBlock = '';
+      const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
+      const thinkMatch = rawText.match(thinkRegex);
+      if (thinkMatch) {
+        thinkingBlock = thinkMatch[1].trim();
+        rawText = rawText.replace(thinkRegex, '').trim();
+      }
+
+      let parsedContent = sender === 'bot' ? marked.parse(rawText) : `<p>${escapeHtml(rawText)}</p>`;
+
+      if (thinkingBlock) {
+        const thinkHtml = `
+          <details class="premium-think-block" style="margin-bottom: 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); transition: all 0.2s ease;">
+            <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 10px; user-select: none;">
+              <div style="background: #E2E8F0; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                <i class="fa-solid fa-brain" style="color: #64748B; font-size: 0.75rem;"></i>
+              </div>
+              <span style="letter-spacing: 0.3px;">Thought Process</span>
+            </summary>
+            <div style="margin-top: 12px; font-size: 0.9rem; color: #475569; padding-top: 12px; border-top: 1px dashed #CBD5E1; white-space: pre-wrap; line-height: 1.6; font-style: italic;">${escapeHtml(thinkingBlock)}</div>
+          </details>
+        `;
+        parsedContent = thinkHtml + parsedContent;
+      }
 
       let modelBadge = model ? `<div class="model-badge"><i class="fa-solid fa-bolt"></i> Powered by ${escapeHtml(model)}</div>` : '';
-      let imgTag = imageUrl ? `<div><img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" /></div>` : '';
+      let imgTag = imageUrl ? `
+        <div style="position: relative; display: inline-block; max-width: 100%;">
+          <img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" />
+          <div style="position: absolute; bottom: 15px; right: 15px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 4px 10px 4px 4px; border-radius: 30px; backdrop-filter: blur(4px);">
+            <img src="/appicon.jpeg" style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);" />
+            <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Brahmand AI</span>
+          </div>
+        </div>
+      ` : '';
+
+      // Unique ID for the message block to make it modifiable in real-time
+      const msgContentId = sender === 'bot' ? 'msg_content_' + Math.random().toString(36).substring(2, 11) : '';
+
+      let revisionSection = '';
+      if (sender === 'bot' && revisionSuggested) {
+        revisionSection = `
+          <div class="revision-panel" style="margin-top: 12px; padding: 10px 12px; background-color: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; font-size: 0.85rem; color: #991B1B; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div>
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>Maine speed ke liye quality checks check nahi kiya. Kya aap quality revision chahte hain?</span>
+            </div>
+            <button onclick="triggerBackgroundRevision(this, '${escapeSingleQuotes(originalQuery)}', '${escapeSingleQuotes(text)}', '${msgContentId}')" style="background-color: #DC2626; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 0.8rem; flex-shrink: 0; display: flex; align-items: center; gap: 4px; outline: none;">
+              <i class="fa-solid fa-rotate"></i> Revise
+            </button>
+          </div>
+        `;
+      }
+
+      // Suggestion pills container
+      let followupsSection = '';
+      if (sender === 'bot' && followups && followups.length > 0) {
+        let pillsHtml = '';
+        followups.forEach(opt => {
+          pillsHtml += `
+            <button class="followup-pill" onclick="sendFollowupText('${escapeSingleQuotes(opt)}')">
+              <i class="fa-solid fa-arrow-right-long" style="font-size: 0.72rem; color: #10A37F;"></i>
+              <span>${escapeHtml(opt)}</span>
+            </button>
+          `;
+        });
+        followupsSection = `
+          <div class="followup-container">
+            ${pillsHtml}
+          </div>
+        `;
+      }
 
       row.innerHTML = `
         <div class="msg-avatar ${avatarClass}">${avatarIcon}</div>
-        <div class="msg-content">
-          ${parsedContent}
+        <div class="msg-content" id="${msgContentId}">
+          <div class="msg-text-body">${parsedContent}</div>
           ${imgTag}
           ${modelBadge}
+          ${revisionSection}
+          ${followupsSection}
         </div>
       `;
 
@@ -609,21 +1029,14 @@
     }
 
     function appendLoading() {
-      const feed = document.getElementById('activeChatContainer');
-      const row = document.createElement('div');
-      row.className = 'message-row';
-      row.id = 'loadingRow';
-      row.innerHTML = `
-        <div class="msg-avatar bot">🌌</div>
-        <div class="msg-content" style="opacity: 0.6;"><p><i class="fa-solid fa-circle-notch fa-spin"></i> Thinking...</p></div>
-      `;
-      feed.appendChild(row);
-      document.getElementById('chatView').scrollTop = document.getElementById('chatView').scrollHeight;
+      // Compatibility fallback
+      appendLoadingStatus('Thinking...');
     }
 
     function removeLoading() {
       const loading = document.getElementById('loadingRow');
       if (loading) loading.remove();
+      currentLoadingRow = null;
     }
 
     function handleKeyDown(e) {
@@ -636,6 +1049,7 @@
     function escapeHtml(text) {
       return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+
   </script>
 </body>
 </html>
