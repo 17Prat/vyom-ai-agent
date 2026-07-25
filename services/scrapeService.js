@@ -1,7 +1,29 @@
+import FirecrawlApp from '@mendable/firecrawl-js';
 import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const firecrawl = process.env.FIRECRAWL_API_KEY ? new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY }) : null;
 
 export async function scrapeWebsite(url) {
     console.log("🕸️ Scrape request for URL:", url);
+
+    // Attempt Firecrawl for clean markdown extraction
+    if (firecrawl) {
+        try {
+            console.log("🔥 Using Firecrawl for high-quality scraping...");
+            const scrapeResult = await firecrawl.scrapeUrl(url, {
+                formats: ['markdown']
+            });
+            if (scrapeResult.success && scrapeResult.markdown) {
+                return scrapeResult.markdown.substring(0, 5000);
+            }
+        } catch (e) {
+            console.warn("🔥 Firecrawl failed, falling back to basic fetch scrape...", e.message);
+        }
+    }
+
+    // Fallback simple fetch scraper
     try {
         const fetchRes = await fetch(url, {
             headers: {

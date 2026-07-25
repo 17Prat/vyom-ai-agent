@@ -13,14 +13,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@cerebras/cerebras_cloud_sdk": "^1.11.0",
+    "@cerebras/cerebras_cloud_sdk": "^1.91.0",
     "@mendable/firecrawl-js": "^1.8.0",
     "better-sqlite3": "^13.0.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "elevenlabs-node": "^2.0.3",
     "express": "^5.2.1",
-    "groq-sdk": "^0.9.0",
+    "groq-sdk": "^0.9.1",
     "node-cron": "^4.6.0",
     "node-telegram-bot-api": "^1.2.0",
     "replicate": "^1.0.1"

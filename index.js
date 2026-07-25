@@ -11,6 +11,8 @@ import { fileURLToPath } from 'url';
 import { searchWeb } from './services/searchService.js';
 import { scrapeWebsite } from './services/scrapeService.js';
 import { generatePosterImage } from './services/mediaService.js';
+import { listSkills, readSkill } from './utils/skillLoader.js';
+import { toolsDefinition } from './tools.js';
 import * as orchestrator from './utils/orchestrator.js';
 import { SmartResponseController } from './core/SmartResponseController.js';
 
@@ -165,15 +167,21 @@ const GATEWAY_MODELS = {
   fast:     'google/gemini-1.5-flash',
 };
 
-async function callGateway(messages, temperature, modelId) {
+async function callGateway(messages, temperature, modelId, tools = null) {
   const url = 'https://api.llmgateway.io/v1/chat/completions';
+  const body = { model: modelId, messages, temperature };
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
+  
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${process.env.LLM_GATEWAY_API_KEY}`
     },
-    body: JSON.stringify({ model: modelId, messages, temperature })
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
@@ -182,12 +190,16 @@ async function callGateway(messages, temperature, modelId) {
   }
 
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Gateway returned empty content');
-  return { text, model: `${modelId}` };
+  const message = data.choices?.[0]?.message;
+  if (!message) throw new Error('Gateway returned empty content');
+  return { 
+    text: message.content || '', 
+    tool_calls: message.tool_calls || null, 
+    model: `${modelId}` 
+  };
 }
 
-async function callLLM(messages, temperature = 0.3, targetModel = 'auto') {
+async function callLLM(messages, temperature = 0.3, targetModel = 'auto', tools = null) {
   // Resolve Groq model key
   const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
 
@@ -195,14 +207,25 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto') {
   if (groq) {
     try {
       console.log(`🤖 Groq → ${groqModelId}`);
-      const completion = await groq.chat.completions.create({
+      const params = {
         messages,
         model: groqModelId,
         temperature,
         max_tokens: 2048,
-      });
-      const text = completion.choices[0].message.content;
-      if (text) return { text, model: `Groq (${groqModelId})` };
+      };
+      if (tools) {
+        params.tools = tools;
+        params.tool_choice = 'auto';
+      }
+      const completion = await groq.chat.completions.create(params);
+      const message = completion.choices[0].message;
+      if (message) {
+        return { 
+          text: message.content || '', 
+          tool_calls: message.tool_calls || null, 
+          model: `Groq (${groqModelId})` 
+        };
+      }
     } catch (err) {
       console.warn(`Groq primary failed: ${err.message}`);
       
@@ -210,14 +233,25 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto') {
       if (groqModelId !== GROQ_MODELS.default) {
         try {
           console.log(`🤖 Groq fallback → ${GROQ_MODELS.default}`);
-          const completion = await groq.chat.completions.create({
+          const params = {
             messages,
             model: GROQ_MODELS.default,
             temperature,
             max_tokens: 2048,
-          });
-          const text = completion.choices[0].message.content;
-          if (text) return { text, model: `Groq (${GROQ_MODELS.default})` };
+          };
+          if (tools) {
+            params.tools = tools;
+            params.tool_choice = 'auto';
+          }
+          const completion = await groq.chat.completions.create(params);
+          const message = completion.choices[0].message;
+          if (message) {
+            return { 
+              text: message.content || '', 
+              tool_calls: message.tool_calls || null, 
+              model: `Groq (${GROQ_MODELS.default})` 
+            };
+          }
         } catch (err2) {
           console.warn(`Groq fallback also failed: ${err2.message}`);
         }
@@ -230,13 +264,100 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto') {
     const gatewayModelId = GATEWAY_MODELS[targetModel] || GATEWAY_MODELS.smart;
     try {
       console.log(`🌐 Gateway upgrade → ${gatewayModelId}`);
-      return await callGateway(messages, temperature, gatewayModelId);
+      return await callGateway(messages, temperature, gatewayModelId, tools);
     } catch (err) {
       console.warn(`Gateway also failed: ${err.message}`);
     }
   }
 
   throw new Error('All AI providers failed. Check GROQ_API_KEY in .env');
+}
+
+async function executeToolCall(toolCall, writeStreamChunk) {
+  const functionName = toolCall.function.name;
+  let args = {};
+  if (toolCall.function.arguments) {
+    try {
+      args = JSON.parse(toolCall.function.arguments);
+    } catch (e) {
+      args = {};
+    }
+  }
+  console.log(`🔨 Executing tool: ${functionName} with args: ${JSON.stringify(args)}`);
+  
+  if (writeStreamChunk) {
+    writeStreamChunk({ type: 'status', text: `Executing tool: ${functionName}...` });
+  }
+
+  try {
+    switch (functionName) {
+      case 'list_skills':
+        return listSkills();
+      case 'read_skill':
+        return readSkill(args.skillName);
+      case 'search_web':
+        return await searchWeb(args.query);
+      case 'scrape_website':
+        return await scrapeWebsite(args.url);
+      case 'generate_image':
+        return await generatePosterImage(args.prompt);
+      default:
+        return `Error: Unknown function ${functionName}`;
+    }
+  } catch (error) {
+    console.error(`Error executing ${functionName}:`, error);
+    return `Error executing tool: ${error.message}`;
+  }
+}
+
+async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) {
+  const maxIterations = 5;
+  let currentIteration = 0;
+  let finalModelUsed = modelName;
+  let generatedImageUrl = null;
+
+  while (currentIteration < maxIterations) {
+    const response = await callLLM(messages, temperature, modelName, toolsDefinition);
+    finalModelUsed = response.model;
+    
+    // Standardize assistant message for history
+    const assistantMsg = {
+      role: 'assistant',
+      content: response.text || '',
+      tool_calls: response.tool_calls
+    };
+    messages.push(assistantMsg);
+
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      for (const toolCall of response.tool_calls) {
+        const result = await executeToolCall(toolCall, writeStreamChunk);
+
+        if (toolCall.function.name === 'generate_image') {
+          generatedImageUrl = result;
+        }
+
+        messages.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          name: toolCall.function.name,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+      currentIteration++;
+    } else {
+      return {
+        text: response.text,
+        model: finalModelUsed,
+        imageUrl: generatedImageUrl
+      };
+    }
+  }
+
+  return { 
+    text: "Reached maximum iterations without final answer.", 
+    model: finalModelUsed, 
+    imageUrl: generatedImageUrl 
+  };
 }
 
 // Smart model router — maps query context to the best Gateway model key
@@ -846,129 +967,14 @@ app.post('/api/chat', async (req, res) => {
       promptOverride += `\n\n### CRITICAL RESPONSE LENGTH CONSTRAINT ###\n- The user asked a short, simple question. \n- Respond directly in a single, short sentence. Keep it under 40 words!`;
     }
 
-
-
-    // 5. Smart LLM-based Intent & Tool Classification
-    let needsSearch = false;
-    let needsScrape = false;
-    let needsImage = false;
-    let searchQuery = message;
-    let scrapeUrl = '';
-    let imagePrompt = message;
-
-    // Pre-check for URLs
-    const urlMatches = message.match(/(https?:\/\/[^\s]+)/g);
-    if (urlMatches && urlMatches[0]) {
-      needsScrape = true;
-      scrapeUrl = urlMatches[0];
-    }
-
-    try {
-      const classification = await classifyIntentAndTools(message);
-      if (classification) {
-        needsSearch = !!classification.needsSearch;
-        needsScrape = !!classification.needsScrape;
-        needsImage = !!classification.needsImage;
-        if (classification.searchQuery) searchQuery = classification.searchQuery;
-        if (classification.scrapeUrl) scrapeUrl = classification.scrapeUrl;
-        if (classification.imagePrompt) imagePrompt = classification.imagePrompt;
-        console.log("🧠 Smart LLM Classifier Results:", classification);
-      }
-    } catch (err) {
-      console.warn("LLM classification failed, using regex fallback:", err.message);
-      needsSearch = determineActionIntent(message) === 'SEARCH_WEB' || 
-                    ['search', 'dhoondo', 'find online', 'latest', 'news', 'weather', 'current'].some(kw => lowerMessage.includes(kw));
-      needsImage = ['image', 'photo', 'poster', 'banner', 'generate image', 'chitra', 'photo banao', 'design post', 'draw', 'paint', 'sketch', 'campaign poster', 'instagram post'].some(kw => lowerMessage.includes(kw));
-      if (needsScrape && urlMatches && urlMatches[0]) scrapeUrl = urlMatches[0];
-      const imgPrompt = message.replace(/(image|photo|poster|banner|generate|make|chitra|draw|paint)/gi, '').trim();
-      imagePrompt = imgPrompt || message;
-    }
-
-    const toolsDetected = [];
-    if (needsSearch) toolsDetected.push('Web Search');
-    if (needsScrape) toolsDetected.push('Web Scrape');
-    if (needsImage) toolsDetected.push('Image Gen');
-
-    if (toolsDetected.length > 0) {
-      writeStreamChunk({ type: 'status', text: `Identified tools: ${toolsDetected.join(', ')}` });
-    }
-
-    let toolContext = '';
-    let generatedImageUrl = '';
-
-    // 6. Tool Execution
-    if (speedMode === 'FAST') {
-      // Sequential Execution
-      if (needsSearch) {
-        writeStreamChunk({ type: 'status', text: 'Step 1/2: Searching the web...' });
-        const searchRes = await searchWeb(searchQuery);
-        if (searchRes) toolContext += `\n\n[LIVE SEARCH DATA]:\n${searchRes}\n`;
-      }
-      
-      if (needsScrape) {
-        writeStreamChunk({ type: 'status', text: 'Step 1/2: Scraping website url...' });
-        if (scrapeUrl) {
-          const scraped = await scrapeWebsite(scrapeUrl);
-          if (scraped) toolContext += `\n\n[SCRAPED DATA FROM URL ${scrapeUrl}]:\n${scraped}\n`;
-        }
-      }
-
-      if (needsImage) {
-        writeStreamChunk({ type: 'status', text: 'Step 2/2: Generating image asset...' });
-        generatedImageUrl = await generatePosterImage(imagePrompt);
-      }
-    } else {
-      // Parallel Execution (MEDIUM or SLOW)
-      writeStreamChunk({ type: 'status', text: 'Executing all tools in parallel to save time...' });
-      const promises = [];
-      let searchIndex = -1;
-      let scrapeIndex = -1;
-      let imageIndex = -1;
-
-      if (needsSearch) {
-        searchIndex = promises.length;
-        promises.push(searchWeb(searchQuery));
-      }
-      
-      if (needsScrape) {
-        scrapeIndex = promises.length;
-        promises.push(scrapeUrl ? scrapeWebsite(scrapeUrl) : Promise.resolve(null));
-      }
-
-      if (needsImage) {
-        imageIndex = promises.length;
-        promises.push(generatePosterImage(imagePrompt));
-      }
-
-      const results = await Promise.all(promises);
-
-      if (searchIndex !== -1 && results[searchIndex]) {
-        toolContext += `\n\n[LIVE SEARCH DATA]:\n${results[searchIndex]}\n`;
-      }
-      if (scrapeIndex !== -1 && results[scrapeIndex]) {
-        toolContext += `\n\n[SCRAPED DATA FROM URL ${scrapeUrl}]:\n${results[scrapeIndex]}\n`;
-      }
-      if (imageIndex !== -1 && results[imageIndex]) {
-        generatedImageUrl = results[imageIndex];
-      }
-    }
-
-    // Simulate model speed latency for slow model demo if forced
-    if (speedMode === 'SLOW') {
-      writeStreamChunk({ type: 'status', text: 'Simulating model latency... (2s delay for slow speed demo)' });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-
-    // 6. Token Optimization & LLM invocation
+    // 5. Build Dynamic Agent Messages
     let skills = loadSkills();
     let temperature = 0.3;
-    
-    // Keep prompt size small to avoid Groq TPM limits (Limit 6000)
     skills = skills.substring(0, 2000) + '\n... [Truncated for token limit]';
     
-    let systemPrompt = buildSystemPrompt(skills, toolContext, speedMode, isUrgent, detectedExpertise, detectedIntent, detectedEmotion, promptOverride);
+    let systemPrompt = buildSystemPrompt(skills, '', speedMode, isUrgent, detectedExpertise, detectedIntent, detectedEmotion, promptOverride);
 
-    // Limit history to the last 4 messages to save massive token overhead
+    // Limit history to the last 4 messages to save token overhead
     const history = getHistory(sessionId).slice(-4);
     const cleanHistory = history.map(h => ({
       role: h.role,
@@ -983,10 +989,14 @@ app.post('/api/chat', async (req, res) => {
       { role: 'user', content: message }
     ];
 
-    writeStreamChunk({ type: 'status', text: 'Sending request to LLM...' });
-    const response = await callLLM(fullMessages, temperature, routedModelName);
-    let finalResponseText = response.text;
-    let modelUsed = response.model;
+    writeStreamChunk({ type: 'status', text: 'Spawning autonomous agent loop... ⏳' });
+
+    // Execute dynamic agent loop (tool calling)
+    const agentResult = await runAgentLoop(fullMessages, temperature, routedModelName, writeStreamChunk);
+    
+    let finalResponseText = agentResult.text;
+    let modelUsed = agentResult.model;
+    let generatedImageUrl = agentResult.imageUrl;
 
     // 7. Quality check & Revision loop
     let qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
