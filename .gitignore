@@ -2,3 +2,13 @@ node_modules/
 .env
 .DS_Store
 *.log
+
+# Generated output folders
+skillopt/batch_output/
+skillopt/outputs/
+skillopt/comparison/
+
+# Local databases and runtime state
+*.db
+session.json
+scratch/

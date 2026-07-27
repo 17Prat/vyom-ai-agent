@@ -1,0 +1,58 @@
+[
+  {
+    "id": "mkt_train_001",
+    "festival": "Diwali",
+    "target_audience": "young professionals in metro cities",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for Diwali targeting young professionals in metro cities. They value modern aesthetics but also feel nostalgic about childhood Diwali traditions."
+  },
+  {
+    "id": "mkt_train_002",
+    "festival": "Holi",
+    "target_audience": "corporate teams and offices",
+    "platform": "LinkedIn",
+    "prompt": "Create a LinkedIn campaign for Holi targeting corporate teams and offices. Focus on team bonding, workplace culture, and the spirit of collaboration."
+  },
+  {
+    "id": "mkt_train_003",
+    "festival": "Independence Day",
+    "target_audience": "patriotic consumers aged 25-45",
+    "platform": "Twitter/X",
+    "prompt": "Create a Twitter campaign for Independence Day targeting patriotic consumers aged 25-45. Use concise, impactful messaging that evokes national pride."
+  },
+  {
+    "id": "mkt_train_004",
+    "festival": "New Year",
+    "target_audience": "millennials planning resolutions and parties",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for New Year targeting millennials who are planning resolutions and parties. Combine aspirational goals with festive celebration."
+  },
+  {
+    "id": "mkt_train_005",
+    "festival": "Raksha Bandhan",
+    "target_audience": "siblings living in different cities",
+    "platform": "LinkedIn",
+    "prompt": "Create a LinkedIn campaign for Raksha Bandhan targeting siblings living in different cities. Focus on emotional connection, nostalgia, and the bond of protection."
+  },
+  {
+    "id": "mkt_train_006",
+    "festival": "Guru Purnima",
+    "target_audience": "students and spiritual seekers",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for Guru Purnima targeting students and spiritual seekers. Highlight the importance of teachers and mentors in personal growth."
+  },
+  {
+    "id": "mkt_train_007",
+    "festival": "Durga Puja",
+    "target_audience": "Bengali communities worldwide",
+    "platform": "Facebook",
+    "prompt": "Create a Facebook campaign for Durga Puja targeting Bengali communities worldwide. Celebrate cultural heritage, pandal hopping, and community gatherings."
+  },
+  {
+    "id": "mkt_train_008",
+    "festival": "Christmas",
+    "target_audience": "families with young children",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for Christmas targeting families with young children. Emphasize togetherness, gift-giving joy, and festive traditions."
+  }
+]

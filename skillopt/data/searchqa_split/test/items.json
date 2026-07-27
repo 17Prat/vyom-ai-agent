@@ -1,0 +1,14 @@
+[
+  {
+    "id": "mkt_test_001",
+    "question": "What type of creative angle uses high-urgency promotional hooks?",
+    "context": "Festival campaigns use emotional, modern, and FOMO angles. The FOMO angle creates urgency and leverages limited-time offers to drive immediate action from the audience.",
+    "answers": ["FOMO/Discount Angle"]
+  },
+  {
+    "id": "mkt_test_002",
+    "question": "Which platform needs visual-first punchy copy format?",
+    "context": "Content adaptation varies by platform. LinkedIn uses professional storytelling. Instagram requires visual-first, punchy copy. Twitter needs concise viral-ready hooks.",
+    "answers": ["Instagram"]
+  }
+]

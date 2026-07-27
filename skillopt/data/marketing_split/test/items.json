@@ -1,0 +1,16 @@
+[
+  {
+    "id": "mkt_test_001",
+    "festival": "Ganesh Chaturthi",
+    "target_audience": "devotees and cultural enthusiasts",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for Ganesh Chaturthi targeting devotees and cultural enthusiasts. Highlight eco-friendly celebrations and spiritual devotion."
+  },
+  {
+    "id": "mkt_test_002",
+    "festival": "Valentine's Day",
+    "target_audience": "couples and singles aged 18-35",
+    "platform": "Twitter/X",
+    "prompt": "Create a Twitter campaign for Valentine's Day targeting couples and singles. Use witty, relatable content that celebrates all kinds of love."
+  }
+]

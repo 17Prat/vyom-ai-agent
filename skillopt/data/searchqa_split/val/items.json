@@ -1,0 +1,14 @@
+[
+  {
+    "id": "mkt_val_001",
+    "question": "What is the recommended hashtag range for festival social media posts?",
+    "context": "Hashtags help festival content reach wider audiences. Using 5-8 relevant hashtags per post provides optimal balance. Mix high-volume general tags with niche specific ones for best results.",
+    "answers": ["5-8"]
+  },
+  {
+    "id": "mkt_val_002",
+    "question": "What style of CTA works best for LinkedIn campaign posts?",
+    "context": "CTA styles should match platform culture. LinkedIn benefits from professional, storytelling-driven CTAs. Instagram uses engagement-focused CTAs like DMs. Twitter uses direct response CTAs for clicks.",
+    "answers": ["Professional tone and storytelling structure"]
+  }
+]

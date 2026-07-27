@@ -1,0 +1,62 @@
+# Brahmand SkillOpt Config for Groq API
+# Flat config format (no _base_ inheritance)
+
+# Model settings
+optimizer_model: llama-3.1-8b-instant
+target_model: llama-3.1-8b-instant
+optimizer_backend: openai_chat
+target_backend: openai_chat
+
+# Azure/OpenAI-compatible settings (Groq API)
+azure_openai_endpoint: https://api.groq.com/openai/v1
+azure_openai_api_key: YOUR_GROQ_API_KEY
+azure_openai_auth_mode: openai_compatible
+
+optimizer_azure_openai_endpoint: https://api.groq.com/openai/v1
+optimizer_azure_openai_api_key: YOUR_GROQ_API_KEY
+optimizer_azure_openai_auth_mode: openai_compatible
+
+target_azure_openai_endpoint: https://api.groq.com/openai/v1
+target_azure_openai_api_key: YOUR_GROQ_API_KEY
+target_azure_openai_auth_mode: openai_compatible
+
+# Train settings
+num_epochs: 1
+train_size: 8
+batch_size: 4
+accumulation: 1
+seed: 42
+
+# Gradient settings
+minibatch_size: 1
+merge_batch_size: 2
+analyst_workers: 1
+failure_only: false
+max_analyst_rounds: 1
+
+# Optimizer settings
+edit_budget: 2
+min_edit_budget: 1
+lr_scheduler: constant
+lr_control_mode: fixed
+skill_update_mode: patch
+use_slow_update: false
+use_meta_skill: false
+use_skill_aware_reflection: false
+
+# Evaluation settings
+use_gate: false
+sel_env_num: 0
+test_env_num: 0
+eval_test: false
+
+# Environment settings
+env: marketing
+skill_init: C:\Users\prarh\Downloads\BRAHMAND AI AGENT\skillopt\skills\initial_skill.md
+split_mode: split_dir
+split_dir: C:\Users\prarh\Downloads\BRAHMAND AI AGENT\skillopt\data\marketing_split
+max_turns: 1
+max_completion_tokens: 4096
+workers: 2
+limit: 0
+out_root: C:\Users\prarh\Downloads\BRAHMAND AI AGENT\skillopt\outputs

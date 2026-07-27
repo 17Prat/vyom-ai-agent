@@ -1,0 +1,50 @@
+[
+  {
+    "id": "mkt_train_001",
+    "question": "What are the three creative angles recommended for a festival campaign?",
+    "context": "Effective festival marketing campaigns use three distinct creative angles. The emotional/nostalgic angle connects to family traditions and memories. The modern/relatable angle targets tech-savvy young professionals. The FOMO/discount angle creates high-urgency promotional hooks.",
+    "answers": ["Emotional/Nostalgic Angle, Modern/Relatable Angle, FOMO/Discount Angle"]
+  },
+  {
+    "id": "mkt_train_002",
+    "question": "Which platform requires a professional tone and storytelling structure?",
+    "context": "Different social platforms require different approaches. LinkedIn posts perform best with professional tone and storytelling structure. Instagram needs punchy visual-first copy. Twitter demands concise viral hooks within character limits.",
+    "answers": ["LinkedIn"]
+  },
+  {
+    "id": "mkt_train_003",
+    "question": "What should be included in the first 3 seconds or first line of campaign content?",
+    "context": "Capturing attention quickly is critical. The hook should use high contrast, a question, or a bold statement. Follow with value-driven body copy and natural emoji placement. End with a single clear call to action.",
+    "answers": ["High contrast, question, or bold statement"]
+  },
+  {
+    "id": "mkt_train_004",
+    "question": "How many hashtags are recommended for a festival campaign post?",
+    "context": "Hashtag strategy balances reach and relevance. Use a mix of high-volume and niche tags. The recommended quantity is 5-8 relevant hashtags per post to maximize discoverability without appearing spammy.",
+    "answers": ["5-8"]
+  },
+  {
+    "id": "mkt_train_005",
+    "question": "What call to action style is recommended for Instagram campaigns?",
+    "context": "Each platform needs a tailored CTA strategy. LinkedIn works well with professional CTAs. Instagram campaigns should focus CTAs on engagement like DMs and Saves. Twitter benefits from link clicks and retweet prompts.",
+    "answers": ["DMs/Save"]
+  },
+  {
+    "id": "mkt_train_006",
+    "question": "Which angle connects campaign content to family traditions and memories?",
+    "context": "Three angles drive festival campaigns. The emotional angle taps into nostalgia and family bonds. The modern angle appeals to young professionals. The FOMO angle leverages urgency and limited-time offers.",
+    "answers": ["Emotional/Nostalgic Angle"]
+  },
+  {
+    "id": "mkt_train_007",
+    "question": "What is the single most important element at the end of campaign copy?",
+    "context": "Every campaign post needs structure. Start with an attention-grabbing hook. Provide value-driven body copy. Place emojis naturally throughout. End with a single clear next-step for the audience.",
+    "answers": ["Call to action (CTA)"]
+  },
+  {
+    "id": "mkt_train_008",
+    "question": "Which platform requires the most concise copy format?",
+    "context": "Content length varies by platform. LinkedIn allows longer storytelling format. Instagram benefits from medium-length punchy copy. Twitter/X demands maximum conciseness with viral hooks under 280 characters.",
+    "answers": ["Twitter/X"]
+  }
+]

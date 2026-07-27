@@ -1,0 +1,16 @@
+[
+  {
+    "id": "mkt_val_001",
+    "festival": "Eid",
+    "target_audience": "Muslim families and friends",
+    "platform": "Instagram",
+    "prompt": "Create an Instagram campaign for Eid targeting Muslim families and friends. Focus on togetherness, feasts, and the spirit of giving."
+  },
+  {
+    "id": "mkt_val_002",
+    "festival": "Pongal",
+    "target_audience": "rural and urban South Indian communities",
+    "platform": "Twitter/X",
+    "prompt": "Create a Twitter campaign for Pongal targeting South Indian communities. Celebrate harvest, tradition, and gratitude."
+  }
+]
