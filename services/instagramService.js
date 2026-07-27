@@ -1,24 +1,12 @@
 import puppeteer from "puppeteer-core";
+import fetch from "node-fetch";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import dotenv from "dotenv";
+dotenv.config();
 
 const CHROME_PATH = "C:/Program Files/Google/Chrome/Application/chrome.exe";
-
-async function withBrowser(fn) {
-  const browser = await puppeteer.launch({
-    executablePath: CHROME_PATH,
-    headless: true,
-    args: ["--no-sandbox"]
-  });
-  try {
-    return await fn(browser);
-  } finally {
-    await browser.close();
-  }
-}
-
-function newPage(page) {
-  page.setViewport({ width: 1280, height: 800 });
-  page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-}
 
 function parseNum(str) {
   if (!str) return 0;
@@ -186,29 +174,165 @@ export async function getInstagramRecentMedia(targetUsername) {
   });
 }
 
+const SESSION_DIR = path.join(os.homedir(), ".brahmand-ig-session");
+
+function ensureSessionDir() {
+  if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
+}
+
+async function getSavedCookies(page) {
+  const cookiePath = path.join(SESSION_DIR, "cookies.json");
+  if (!fs.existsSync(cookiePath)) return false;
+  const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
+  if (!cookies.length) return false;
+  await page.setCookie(...cookies);
+  return true;
+}
+
+async function saveCookies(page) {
+  ensureSessionDir();
+  const cookies = await page.cookies();
+  fs.writeFileSync(path.join(SESSION_DIR, "cookies.json"), JSON.stringify(cookies, null, 2));
+}
+
+async function launchBrowser() {
+  ensureSessionDir();
+  return await puppeteer.launch({
+    executablePath: CHROME_PATH,
+    headless: false,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=${SESSION_DIR}/profile`],
+  });
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
 export async function publishInstagramPhoto(imageUrl, caption) {
-  const creds = JSON.parse(process.env.IG_CREDENTIALS || "{}");
-  if (!creds.username || !creds.password) {
-    return "Instagram posting requires login credentials which are not available. Configure IG_USERNAME and IG_PASSWORD.";
+  const IG_USERNAME = process.env.IG_USERNAME;
+  const IG_PASSWORD = process.env.IG_PASSWORD;
+  if (!IG_USERNAME || !IG_PASSWORD) {
+    return "Instagram posting requires IG_USERNAME and IG_PASSWORD environment variables.";
   }
 
-  return await withBrowser(async (browser) => {
-    const page = await browser.newPage();
-    newPage(page);
-
-    await page.goto("https://www.instagram.com/accounts/login/", { waitUntil: "networkidle2", timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2000));
-    await page.type('input[name="email"]', creds.username);
-    await page.type('input[name="pass"]', creds.password);
-    await page.keyboard.press("Enter");
-    await new Promise(r => setTimeout(r, 5000));
-
-    if (page.url().includes("recaptcha") || page.url().includes("challenge")) {
-      return "Instagram Security Block: Login requires CAPTCHA verification. Please log into instagram.com in your browser first, then retry.";
+  let browser;
+  try {
+    let buffer;
+    if (imageUrl.startsWith('http')) {
+      const resp = await fetch(imageUrl);
+      if (!resp.ok) return `Failed to fetch image: ${resp.statusText}`;
+      buffer = Buffer.from(await resp.arrayBuffer());
+    } else {
+      buffer = fs.readFileSync(imageUrl);
     }
+    const tmpPath = path.join(os.tmpdir(), `ig-post-${Date.now()}.jpg`);
+    fs.writeFileSync(tmpPath, buffer);
 
-    return "Posting via browser is complex. Direct API posting not available.";
-  });
+    browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1366, height: 768 });
+
+    // Try loading saved cookies first
+    await getSavedCookies(page);
+
+    await page.goto("https://www.instagram.com/", { waitUntil: "networkidle2", timeout: 30000 });
+    await delay(3000);
+
+    // Real login check: look for login form or feed
+    const needsLogin = await page.evaluate(() => {
+      return !!document.querySelector('input[name="email"]') || !!document.querySelector('input[name="username"]');
+    });
+
+    if (needsLogin) {
+      console.log("No valid session, logging in...");
+      await page.goto("https://www.instagram.com/accounts/login/", { waitUntil: "networkidle2", timeout: 30000 });
+      await delay(2000);
+      await page.waitForSelector('input[name="email"]', { timeout: 15000 });
+      await page.type('input[name="email"]', IG_USERNAME, { delay: 40 });
+      await page.type('input[name="pass"]', IG_PASSWORD, { delay: 40 });
+      await page.click('div[aria-label="Log In"]');
+      await delay(3000);
+
+      const urlAfterLogin = page.url();
+
+      // Check if we hit a challenge
+      if (urlAfterLogin.includes('challenge') || urlAfterLogin.includes('recaptcha') || urlAfterLogin.includes('auth_platform')) {
+        console.log("Captcha/challenge detected! Solve it in the browser window...");
+        // Wait up to 120s for user to solve captcha
+        for (let i = 0; i < 120; i++) {
+          await delay(1000);
+          const currentUrl = page.url();
+          if (!currentUrl.includes('challenge') && !currentUrl.includes('recaptcha') && !currentUrl.includes('auth_platform') && !currentUrl.includes('login')) {
+            console.log("Challenge solved!");
+            break;
+          }
+        }
+      }
+
+      // Verify login by checking for feed elements or redirect
+      await delay(3000);
+      const stillOnLogin = await page.evaluate(() => !!document.querySelector('input[name="email"]'));
+      if (stillOnLogin) {
+        return "Instagram login failed. Check credentials or solve captcha manually.";
+      }
+
+      await saveCookies(page);
+      console.log("Login cookies saved.");
+    }
+    // Navigate directly to create/select (upload page)
+    await page.goto("https://www.instagram.com/create/select/", { waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
+    await delay(3000);
+
+    // Upload image to file input
+    const fileInput = await page.waitForSelector('input[type="file"]', { timeout: 15000 }).catch(() => null);
+    if (!fileInput) {
+      await browser.close();
+      return "Instagram: Could not find file upload input.";
+    }
+    await fileInput.uploadFile(tmpPath);
+    console.log("Image uploaded to Instagram");
+    await delay(4000);
+
+    // Click "Next" button
+    await page.evaluate(() => {
+      for (const b of document.querySelectorAll('button')) {
+        if (b.textContent.trim().toLowerCase() === 'next') { b.click(); return; }
+      }
+    });
+    console.log("Clicked Next");
+    await delay(4000);
+
+    // Type caption in the textarea (on /create/details/)
+    await page.evaluate(() => {
+      for (const t of document.querySelectorAll('textarea')) {
+        if (t.placeholder?.toLowerCase().includes('write') || t.placeholder?.toLowerCase().includes('caption')) {
+          t.focus();
+          t.click();
+          return;
+        }
+      }
+    });
+    await delay(800);
+    await page.keyboard.type(caption, { delay: 12 });
+    await delay(1000);
+
+    // Click "Share" button
+    await page.evaluate(() => {
+      for (const b of document.querySelectorAll('button')) {
+        if (b.textContent.trim().toLowerCase() === 'share') { b.click(); return; }
+      }
+    });
+    console.log("Clicked Share");
+    await delay(8000);
+
+    await browser.close();
+    try { fs.unlinkSync(tmpPath); } catch(e) {}
+
+    return JSON.stringify({ success: true, message: "Post published successfully to Instagram!" });
+  } catch (error) {
+    if (browser) try { await browser.close(); } catch(e) {}
+    return `Instagram post failed: ${error.message}`;
+  }
 }
 
 export { getInstagramRecentMedia as getInstagramPosts };

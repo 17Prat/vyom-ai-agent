@@ -68,6 +68,13 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+  CREATE TABLE IF NOT EXISTS session_data (
+    session_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, key)
+  );
 `);
 
 const cerebras = process.env.CEREBRAS_API_KEY
@@ -146,6 +153,7 @@ const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मां�
 - If user asks about THEIR feed/profile, call the tool WITHOUT username (defaults to their account).
 - If user asks about ANOTHER account (by username), pass the username parameter.
 - If user asks to post/upload, call 'post_to_instagram'.
+- **IMAGE → INSTAGRAM FLOW:** Jab bhi tum 'generate_image' call karke image generate karo, toh uske baad user se naturally poocho — "Kya main is image ko Instagram pe post kar doon?" Agar user haan bole, toh 'post_to_instagram(imageUrl, caption)' call karo. imageUrl tumhe "LAST GENERATED IMAGE URL" system instruction mein milega agar user agle message mein haan bole. Tum apne pichle response mein bhi URL daal sakte ho. Yeh poochhna hamesha mandatory hai.
 
 ### DECISION-MAKING PROTOCOL:
 - If a user asks a simple question, give a direct, natural answer.
@@ -570,6 +578,20 @@ function getHistory(sessionId) {
     ) ORDER BY id ASC
   `);
   return stmt.all(sessionId);
+}
+
+function saveSessionData(sessionId, key, value) {
+  const stmt = db.prepare('REPLACE INTO session_data (session_id, key, value) VALUES (?, ?, ?)');
+  stmt.run(sessionId, key, String(value));
+}
+
+function getSessionData(sessionId, key) {
+  const row = db.prepare('SELECT value FROM session_data WHERE session_id = ? AND key = ?').get(sessionId, key);
+  return row ? row.value : null;
+}
+
+function deleteSessionData(sessionId, key) {
+  db.prepare('DELETE FROM session_data WHERE session_id = ? AND key = ?').run(sessionId, key);
 }
 
 // Helper to build dynamic system prompts matching speed, expertise, intent, and emotion guidelines
@@ -1012,6 +1034,12 @@ app.post('/api/chat', async (req, res) => {
     
     let systemPrompt = buildSystemPrompt(skills, '', speedMode, isUrgent, detectedExpertise, detectedIntent, detectedEmotion, promptOverride);
 
+    // Inject last generated image URL for cross-request Instagram posting flow
+    const lastImageUrl = getSessionData(sessionId, 'last_image_url');
+    if (lastImageUrl) {
+      systemPrompt += `\n\n### LAST GENERATED IMAGE URL (for cross-request use)\nImage URL: ${lastImageUrl}\n\nAgar user ne pichle message mein image generate karwai thi aur ab "post karo" / "haan" / "kardo" keh raha hai, toh yeh URL use karke 'post_to_instagram(imageUrl: "${lastImageUrl}", caption: "...")' call karo.\n`;
+    }
+
     // Limit history to the last 4 messages to save token overhead
     const history = getHistory(sessionId).slice(-4);
     const cleanHistory = history.map(h => ({
@@ -1035,6 +1063,11 @@ app.post('/api/chat', async (req, res) => {
     let finalResponseText = agentResult.text;
     let modelUsed = agentResult.model;
     let generatedImageUrl = agentResult.imageUrl;
+
+    // Persist last generated image URL for cross-request Instagram posting
+    if (generatedImageUrl) {
+      saveSessionData(sessionId, 'last_image_url', generatedImageUrl);
+    }
 
     // 7. Quality check & Revision loop
     let qualityScore = 10;

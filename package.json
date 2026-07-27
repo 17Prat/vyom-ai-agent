@@ -22,9 +22,11 @@
     "express": "^5.2.1",
     "groq-sdk": "^0.9.1",
     "instagram-private-api": "^1.45.3",
+    "instagram-web-api": "^2.2.2",
     "node-cron": "^4.6.0",
     "node-telegram-bot-api": "^1.2.0",
     "puppeteer-core": "^25.3.0",
-    "replicate": "^1.0.1"
+    "replicate": "^1.0.1",
+    "sharp": "^0.35.3"
   }
 }
