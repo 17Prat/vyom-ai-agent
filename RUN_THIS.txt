@@ -1,0 +1,1 @@
+git add -A && git commit -m "chore: fix gitignore, cleanup temp scripts, migrate to developer-ai-agent" && git push origin developer-ai-agent
