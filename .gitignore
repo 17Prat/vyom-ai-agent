@@ -16,3 +16,22 @@ scratch/
 # Temp scripts
 delete_sync_branch.ps1
 do_branch_migration.bat
+
+# Temp directory content
+temp/
+public/previews/
+
+# Test or sandbox files
+test_*.js
+test-*.js
+debug-dm.mjs
+run-send-dm.mjs
+shiva-post.mjs
+send-dm.mjs
+list_gateway_models.js
+list_models.js
+verify_free_asset.js
+s1-dialog.png
+RUN_THIS.txt
+image.md
+mediaService.js

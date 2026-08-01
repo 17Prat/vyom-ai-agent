@@ -101,7 +101,7 @@ export function saveToCache(db, query, responseText, modelName, imageUrl) {
 // Evaluate Response Quality (returns a score from 1-10)
 export async function evaluateQuality(callLLM, userQuery, responseText, speedMode) {
   try {
-    if (responseText.includes("Instagram Security Block") || responseText.includes("Successfully published to Instagram") || responseText.includes("Failed to execute tool") || responseText.includes("Error executing")) {
+    if (responseText.includes("Instagram Security Block") || responseText.includes("published successfully") || responseText.includes("Instagram post failed") || responseText.includes("post published") || responseText.includes("Failed to execute tool") || responseText.includes("Error executing") || responseText.includes("Message sent to") || responseText.includes("Could not send") || responseText.includes("login failed") || responseText.includes("Could not find file")) {
       console.log("⭐ Tool status/error response detected. Bypassing quality evaluation with score 10.");
       return 10;
     }

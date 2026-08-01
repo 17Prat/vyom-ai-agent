@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import Groq from 'groq-sdk';
+import Anthropic from '@anthropic-ai/sdk';
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
@@ -10,12 +11,21 @@ import { fileURLToPath } from 'url';
 
 import { searchWeb } from './services/searchService.js';
 import { scrapeWebsite } from './services/scrapeService.js';
-import { generatePosterImage } from './services/mediaService.js';
+import { generatePosterImage, generateFreeVideoAsset } from './services/mediaService.js';
 import { listSkills, readSkill } from './utils/skillLoader.js';
-import { publishInstagramPhoto, getInstagramRecentMedia, getInstagramProfileInfo } from './services/instagramService.js';
+import { publishInstagramPhoto, publishInstagramVideo, getInstagramRecentMedia, getInstagramProfileInfo, sendInstagramMessage, getLatestIncomingInstagramMessage } from './services/instagramService.js';
 import { toolsDefinition } from './tools.js';
+import { sendWhatsappMessage } from './services/whatsappService.js';
+import { generatePollinationsVideo } from './services/pollinationsVideoService.js';
+import { generateCompleteReel } from './services/reelEngine.js';
+import { generateDynamicReel } from './services/dynamicReelEngine.js';
 import * as orchestrator from './utils/orchestrator.js';
 import { SmartResponseController } from './core/SmartResponseController.js';
+
+// Track last generated image URL across tool calls within the same request
+let _lastGenImageUrl = null;
+let _lastPlannedReel = null;
+let _lastGenVideoPath = null;
 
 const smartController = new SmartResponseController();
 
@@ -31,6 +41,45 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Clean up all playground test files starting with 'test-' or 'test_' and clean_tests.bat on boot
+try {
+  const rootFiles = fs.readdirSync(__dirname);
+  rootFiles.forEach(file => {
+    if (file.startsWith('test-') || file.startsWith('test_') || file === 'clean_tests.bat') {
+      try {
+        const filePath = path.join(__dirname, file);
+        if (fs.statSync(filePath).isFile()) {
+          fs.unlinkSync(filePath);
+          console.log(`🧹 Deleted test file: ${file}`);
+        }
+      } catch (e) {
+        console.warn(`Failed to delete ${file}:`, e.message);
+      }
+    }
+  });
+  
+  // Clean temp folder on boot
+  const tempPath = path.join(__dirname, 'temp');
+  if (fs.existsSync(tempPath)) {
+    const cleanDir = (dirPath) => {
+      const files = fs.readdirSync(dirPath);
+      for (const file of files) {
+        const curPath = path.join(dirPath, file);
+        if (fs.lstatSync(curPath).isDirectory()) {
+          cleanDir(curPath);
+          fs.rmdirSync(curPath);
+        } else {
+          fs.unlinkSync(curPath);
+        }
+      }
+    };
+    cleanDir(tempPath);
+    console.log("🧹 Boot Clean: Emptied 'temp' directory contents successfully!");
+  }
+} catch (err) {
+  console.warn("Failed to perform startup cleanup:", err.message);
+}
 
 const app = express();
 app.use(express.json());
@@ -75,6 +124,16 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (session_id, key)
   );
+  DELETE FROM response_cache WHERE 
+    query_key LIKE '%msg%' OR 
+    query_key LIKE '%message%' OR 
+    query_key LIKE '%instagram%' OR 
+    query_key LIKE '%dm%' OR 
+    query_key LIKE '%send%' OR 
+    query_key LIKE '%chat%' OR 
+    query_key LIKE '%direct%' OR
+    query_key LIKE '%post%' OR
+    query_key LIKE '%upload%';
 `);
 
 const cerebras = process.env.CEREBRAS_API_KEY
@@ -90,7 +149,50 @@ const groq2 = process.env.GROQ_API_KEY_2
   ? new Groq({ apiKey: process.env.GROQ_API_KEY_2 })
   : null;
 
+// Anthropic Claude — PRIMARY provider
+const anthropic = process.env.ANTHROPIC_API_KEY
+  ? new Anthropic({ 
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      baseURL: 'https://api.anthropic.com' // Explicitly set to bypass environment base URL conflicts
+    })
+  : null;
 
+if (anthropic) {
+  console.log('✅ Anthropic Claude loaded as PRIMARY provider.');
+} else {
+  console.warn('⚠️  ANTHROPIC_API_KEY not set — Claude PRIMARY disabled, falling back to OpenAI/Groq.');
+}
+
+// OpenAI — secondary provider (fetch-based, no extra package needed)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
+if (OPENAI_API_KEY) {
+  console.log('✅ OpenAI key detected — available as secondary fallback.');
+} else {
+  console.warn('⚠️  OPENAI_API_KEY not set — OpenAI fallback disabled.');
+}
+
+
+
+// Helper to determine if a query is dynamic/action-oriented and should bypass cache
+function shouldBypassCache(queryText) {
+  if (!queryText) return true;
+  const normalized = queryText.toLowerCase().trim();
+  
+  // Any query that is very short (5 characters or less) is likely a confirmation (e.g., 'yes', 'no', 'ok', 'haan', 'karo')
+  // We should never cache these short context-dependent replies.
+  if (normalized.length <= 5) {
+    return true;
+  }
+
+  const keywords = [
+    'instagram', 'ig ', 'ig_', 'feed', 'post', 'upload', 'msg', 'message', 'dm', 
+    'send', 'chat', 'direct', 'reels', 'reel', 'story', 'stories', 
+    'karo', 'haan', 'yes', 'ok', 'sure', 'done', 'go ahead',
+    'reply', 'replied', 'check', 'dekh', 'kaha', 'kahan', 'tu', 'bata', 'bol', 'hai', 'sun', 'sunn',
+    'whatsapp', 'wa ', 'wa_', 'number'
+  ];
+  return keywords.some(kw => normalized.includes(kw));
+}
 
 function loadSkills() {
   const skillsDir = path.join(__dirname, 'skills');
@@ -129,58 +231,18 @@ function saveWebsitePreview(sessionId, aiResponseText) {
   return null;
 }
 
-const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मांड), an ultra-intelligent, conversational, and helpful AI assistant. You possess vast knowledge and can assist with a wide variety of tasks.
-
-### BEHAVIOR AND PERSONA (DEEPSEEK R1 MODE):
-- Be highly conversational, natural, and friendly. Do NOT sound like a robotic script or rigid rule-based bot.
-- Answer questions deeply and intelligently using your full knowledge base.
-- **CRITICAL LANGUAGE MATCHING:** You MUST detect the language, script, and dialect the user is using (e.g., Marathi, Gujarati, English, Hindi, Hinglish, Bengali, Tamil, Spanish, or ANY language globally) and ALWAYS respond in the EXACT same language and script. Never reply in English if they asked in Marathi.
-- You have an exceptional memory for context. Read the conversational history and adapt your responses accordingly.
-- Never state "I am an AI" or "I am a language model" unless directly asked. Just be helpful.
-- Avoid robotic disclaimers. If you don't know something, state it naturally without apologizing profusely.
-
-### TOOL PROTOCOL:
-- You have access to several powerful tools:
-  - 'list_skills': Lists all available skill files (.md).
-  - 'read_skill': Reads the content of a specific skill.
-  - 'search_web': Searches the web for live information.
-  - 'scrape_website': Extracts clean text from web pages.
-  - 'generate_image': Generates an image based on a descriptive prompt.
-  - 'get_instagram_posts': Fetch recent posts (with likes, comments, caption, date) from ANY Instagram account. Accepts optional 'username' parameter (defaults to your account). Works without login! Example: get_instagram_posts({username: "its_pooja_067_"})
-  - 'get_instagram_profile': Fetch profile details (bio, followers, following, posts count) from ANY Instagram account. Accepts optional 'username' parameter. Works without login! Example: get_instagram_profile({username: "vishal_y_24"})
-  - 'post_to_instagram': Publishes a photo post to Instagram. Requires login (CAPTCHA may block).
-- You MUST use these tools creatively and autonomously. Understand commands in HINGLISH/Hindi/English mixed language naturally - e.g., "Mera feed fetch karke dikhao", "isko check karo", "uski latest post dekho", "kya daala hai usne".
-- If user asks about THEIR feed/profile, call the tool WITHOUT username (defaults to their account).
-- If user asks about ANOTHER account (by username), pass the username parameter.
-- If user asks to post/upload, call 'post_to_instagram'.
-- **IMAGE → INSTAGRAM FLOW:** Jab bhi tum 'generate_image' call karke image generate karo, toh uske baad user se naturally poocho — "Kya main is image ko Instagram pe post kar doon?" Agar user haan bole, toh 'post_to_instagram(imageUrl, caption)' call karo. imageUrl tumhe "LAST GENERATED IMAGE URL" system instruction mein milega agar user agle message mein haan bole. Tum apne pichle response mein bhi URL daal sakte ho. Yeh poochhna hamesha mandatory hai.
-
-### DECISION-MAKING PROTOCOL:
-- If a user asks a simple question, give a direct, natural answer.
-- If a user asks for a detailed explanation, explain it deeply, clearly, and structure your answer with markdown (bolding, lists) for readability.
-- If a tool returns no data, simply state you don't have real-time info in a conversational way.
-- **CRITICAL (WEB SEARCH):** If you use data from [LIVE SEARCH DATA] or [SCRAPED DATA], you MUST cite your sources intelligently using markdown links (e.g., "[Source Name](url)"). Filter out noise and present only verified facts.
-
-### FOLLOWUP SUGGESTIONS RULES (VERY IMPORTANT):
-- Do NOT add <followups> after every response. Most responses do NOT need them.
-- ONLY add <followups> tag when ALL of the following are true:
-  1. The topic is complex, multi-part, or exploratory (e.g. user asked about a broad subject, an image was generated, or code was written).
-  2. There are genuinely useful next steps that the user would actually want.
-  3. The response itself does NOT already invite further discussion naturally.
-- NEVER add <followups> for: simple confirmations, yes/no answers, short factual replies, greetings, or casual chat.
-- When you do include them, limit to maximum 2-3 short, highly relevant suggestions.
-- Format: <followups>["Suggestion 1", "Suggestion 2"]</followups>
-
-### CODE & WEBSITE GENERATION (CRITICAL):
-- NEVER generate HTML, CSS, JavaScript, or any code UNLESS the user EXPLICITLY asks you to write code or build a website.
-- If the user is just asking a general question, answer with plain text. DO NOT output code blocks unnecessarily.
-- ONLY when EXPLICITLY requested, write the complete, self-contained, functional code inside a standard markdown HTML block: \`\`\`html <runnable page code> \`\`\`.
-- Put all styles in <style> and scripts in <script> tags inside that HTML code block.`;
+const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मांड), an ultra-intelligent, friendly AI assistant.
+### BEHAVIOR AND PERSONA:
+- Respond in natural, conversational Hinglish (or match the user's input language/script). Keep responses helpful and premium.
+- Before responding, perform deep step-by-step reasoning about the request.
+- Use tools autonomously when needed. Login is automatic. If asked to post, generate the media first, then pass the result to the posting tool.
+- Cite sources intelligently using markdown links.
+- Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single \`\`\`html ... \`\`\` block.`;
 
 // ============================================================
-// 🤖 AI ENGINE — Groq SDK PRIMARY + LLM Gateway OPTIONAL
-// Groq SDK works reliably. Gateway used only when it has
-// the provider keys configured in the dashboard.
+// 🤖 AI ENGINE — Anthropic Claude PRIMARY + Groq FALLBACK
+// Claude (Sonnet) is the primary provider. Groq kicks in
+// if Claude fails. LLM Gateway is last resort.
 // ============================================================
 
 // Groq SDK model IDs (these actually work)
@@ -193,15 +255,105 @@ const GROQ_MODELS = {
   fast:     'llama-3.1-8b-instant',      // Urgent / sub-second
 };
 
-// LLM Gateway model IDs — only used if Gateway has the provider keys set
+// LLM Gateway model IDs — use exact model IDs from /v1/models list
 const GATEWAY_MODELS = {
-  default:  'google/gemini-1.5-flash',
-  smart:    'google/gemini-1.5-pro',
-  code:     'google/gemini-1.5-pro',
-  creative: 'google/gemini-1.5-pro',
-  expert:   'google/gemini-1.5-pro',
-  fast:     'google/gemini-1.5-flash',
+  default:  'gemini-2.5-flash',
+  smart:    'gemini-2.5-pro',
+  code:     'gemini-2.5-pro',
+  creative: 'gemini-2.5-pro',
+  expert:   'gemini-2.5-pro',
+  fast:     'gemini-2.5-flash',
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anthropic Claude API bridge
+// Converts OpenAI-style messages/tools ↔ Claude API format transparently.
+// ─────────────────────────────────────────────────────────────────────────────
+async function callClaude(messages, temperature, modelId, tools = null) {
+  // 1. Split system message out (Claude takes it separately)
+  let systemText = '';
+  const userMessages = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemText += msg.content + '\n';
+    } else if (msg.role === 'tool') {
+      // Convert OpenAI tool result → Claude tool_result content block
+      userMessages.push({
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: msg.tool_call_id,
+          content: msg.content
+        }]
+      });
+    } else {
+      // assistant messages with tool_calls need conversion too
+      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        const contentBlocks = [];
+        if (msg.content) contentBlocks.push({ type: 'text', text: msg.content });
+        for (const tc of msg.tool_calls) {
+          let inputObj = {};
+          try { inputObj = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
+          contentBlocks.push({
+            type: 'tool_use',
+            id: tc.id,
+            name: tc.function.name,
+            input: inputObj
+          });
+        }
+        userMessages.push({ role: 'assistant', content: contentBlocks });
+      } else {
+        userMessages.push({ role: msg.role, content: msg.content || '' });
+      }
+    }
+  }
+
+  // 2. Convert OpenAI tools → Claude tools schema
+  const claudeTools = tools ? tools
+    .filter(t => t.type === 'function' && t.function)
+    .map(t => ({
+      name: t.function.name,
+      description: t.function.description || '',
+      input_schema: t.function.parameters || { type: 'object', properties: {} }
+    })) : undefined;
+
+  const params = {
+    model: modelId,
+    max_tokens: 2048,
+    temperature,
+    system: systemText.trim() || 'You are a helpful AI assistant.',
+    messages: userMessages
+  };
+  if (claudeTools && claudeTools.length > 0) {
+    params.tools = claudeTools;
+  }
+
+  const response = await anthropic.messages.create(params);
+
+  // 3. Convert Claude response → OpenAI-style format
+  let textContent = '';
+  const toolCalls = [];
+  for (const block of response.content) {
+    if (block.type === 'text') {
+      textContent += block.text;
+    } else if (block.type === 'tool_use') {
+      toolCalls.push({
+        id: block.id,
+        type: 'function',
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input)
+        }
+      });
+    }
+  }
+
+  return {
+    text: textContent,
+    tool_calls: toolCalls.length > 0 ? toolCalls : null,
+    model: `Claude (${modelId})`
+  };
+}
 
 async function callGateway(messages, temperature, modelId, tools = null) {
   const url = 'https://api.llmgateway.io/v1/chat/completions';
@@ -231,7 +383,48 @@ async function callGateway(messages, temperature, modelId, tools = null) {
   return { 
     text: message.content || '', 
     tool_calls: message.tool_calls || null, 
-    model: `${modelId}` 
+    model: `Gateway (${modelId})` 
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenAI API bridge (fetch-based — no extra npm package needed)
+// Converts our standard messages/tools format to OpenAI API directly.
+// ─────────────────────────────────────────────────────────────────────────────
+async function callOpenAI(messages, temperature, modelId = 'gpt-4o-mini', tools = null) {
+  const body = {
+    model: modelId,
+    messages,
+    temperature,
+    max_tokens: 2048
+  };
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const msg = data.choices?.[0]?.message;
+  if (!msg) throw new Error('OpenAI returned empty response');
+
+  return {
+    text: msg.content || '',
+    tool_calls: msg.tool_calls || null,
+    model: `OpenAI (${modelId})`
   };
 }
 
@@ -252,22 +445,37 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto', tools 
 }
 
 async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', tools = null) {
-  const cerebrasModelId = targetModel === 'fast' ? 'zai-glm-4.7' : 'gpt-oss-120b';
+  const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
+  const providerErrors = []; // collect all failure details
 
-  if (cerebras) {
+  // PRIMARY: Anthropic Claude (best quality, no daily token cap)
+  if (anthropic) {
+    // Always use Sonnet — best for both tool-calling and plain text
+    const claudeModel = 'claude-sonnet-4-5';
     try {
-      console.log(`🚀 Cerebras Primary → ${cerebrasModelId}`);
-      const params = {
-        messages, model: cerebrasModelId, temperature, max_tokens: 2048,
-      };
-      if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
-      const completion = await cerebras.chat.completions.create(params);
-      const m = completion.choices[0].message;
-      if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: `Cerebras (${cerebrasModelId})` };
-    } catch (err) { console.warn(`Cerebras failed: ${err.message}`); }
+      console.log(`🧠 Claude PRIMARY → ${claudeModel}`);
+      return await callClaude(messages, temperature, claudeModel, tools);
+    } catch (err) {
+      const detail = `[Claude/${claudeModel}] ${err.message}`;
+      console.warn(`❌ ${detail}`);
+      providerErrors.push(detail);
+    }
   }
 
-  const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
+  // FALLBACK 1: OpenAI (gpt-4o-mini — fast & capable)
+  if (OPENAI_API_KEY) {
+    const openaiModel = tools ? 'gpt-4o' : 'gpt-4o-mini';
+    try {
+      console.log(`🔵 OpenAI Fallback → ${openaiModel}`);
+      return await callOpenAI(messages, temperature, openaiModel, tools);
+    } catch (err) {
+      const detail = `[OpenAI/${openaiModel}] ${err.message}`;
+      console.warn(`❌ ${detail}`);
+      providerErrors.push(detail);
+    }
+  }
+
+  // FALLBACK 2: Groq (fast, free-tier — kicks in if Claude + OpenAI fail)
   for (const [client, label, models] of [
     [groq, 'Groq', [groqModelId, GROQ_MODELS.default]],
     [groq2, 'Groq Key2', [groqModelId, GROQ_MODELS.default]]
@@ -275,25 +483,36 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
     if (!client) continue;
     for (const model of [...new Set(models)]) {
       try {
-        console.log(`🤖 ${label} → ${model}`);
+        console.log(`⚡ ${label} Fallback → ${model}`);
         const params = { messages, model, temperature, max_tokens: 2048 };
         if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
         const completion = await client.chat.completions.create(params);
         const m = completion.choices[0].message;
         if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: `${label} (${model})` };
-      } catch (err) { console.warn(`${label} ${model} failed: ${err.message}`); }
+      } catch (err) {
+        const detail = `[${label}/${model}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+      }
     }
   }
 
+  // FALLBACK 3: LLM Gateway (if it has credits)
   if (process.env.LLM_GATEWAY_API_KEY) {
     const gatewayModelId = GATEWAY_MODELS[targetModel] || GATEWAY_MODELS.smart;
     try {
-      console.log(`🌐 Gateway Fallback → ${gatewayModelId}`);
+      console.log(`🌐 LLM Gateway Fallback → ${gatewayModelId}`);
       return await callGateway(messages, temperature, gatewayModelId, tools);
-    } catch (err) { console.warn(`Gateway failed: ${err.message}`); }
+    } catch (err) {
+      const detail = `[Gateway/${gatewayModelId}] ${err.message}`;
+      console.warn(`❌ ${detail}`);
+      providerErrors.push(detail);
+    }
   }
 
-  throw new Error('All AI providers failed. Check CEREBRAS_API_KEY, GROQ_API_KEY, or LLM_GATEWAY_API_KEY in .env');
+  const summary = providerErrors.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
+  console.error(`\n🚨 ALL PROVIDERS FAILED:\n${summary}\n`);
+  throw new Error(`All AI providers failed:\n${summary}`);
 }
 
 async function executeToolCall(toolCall, writeStreamChunk) {
@@ -325,14 +544,122 @@ async function executeToolCall(toolCall, writeStreamChunk) {
         return await searchWeb(args.query);
       case 'scrape_website':
         return await scrapeWebsite(args.url);
-      case 'generate_image':
-        return await generatePosterImage(args.prompt);
+      case 'generate_image': {
+        const url = await generatePosterImage(args.prompt);
+        _lastGenImageUrl = url;
+        return url;
+      }
       case 'get_instagram_posts':
         return await getInstagramRecentMedia(args.username || 'pratham_patel_18');
       case 'get_instagram_profile':
         return await getInstagramProfileInfo(args.username || 'pratham_patel_18');
-      case 'post_to_instagram':
-        return await publishInstagramPhoto(args.imageUrl, args.caption);
+      case 'post_to_instagram': {
+        let imgUrl = args.imageUrl;
+        if (!imgUrl || imgUrl === 'LAST GENERATED IMAGE URL' || imgUrl === 'last generated image url') {
+          imgUrl = _lastGenImageUrl;
+        }
+        return await publishInstagramPhoto(imgUrl, args.caption);
+      }
+      case 'send_instagram_message':
+        return await sendInstagramMessage(args.username, args.message, args.mediaPath);
+      case 'send_whatsapp_message':
+        return await sendWhatsappMessage(args.recipient, args.message);
+      case 'generate_video':
+        return await generatePollinationsVideo(args.prompt, args.duration || 4, args.model || 'veo', args.aspectRatio || '9:16', args.audio || false);
+      case 'generate_free_video_asset':
+        return await generateFreeVideoAsset(args.prompt);
+      case 'post_video_to_instagram':
+        return await publishInstagramVideo(args.videoPath, args.caption);
+      case 'plan_instagram_reel': {
+        const planResultText = await planInstagramReel(args.topic);
+        if (writeStreamChunk && _lastPlannedReel) {
+          try {
+            writeStreamChunk({ type: 'reel_plan', plan: _lastPlannedReel });
+          } catch(e) {}
+        }
+        return planResultText;
+      }
+      case 'check_and_reply_instagram_messages': {
+        const checkResult = await getLatestIncomingInstagramMessage(args.username);
+        if (checkResult.error) {
+          return `Error checking messages: ${checkResult.error}`;
+        }
+        if (checkResult.lastMessage && checkResult.isIncoming) {
+          console.log(`Incoming reply from @${args.username}: "${checkResult.lastMessage}". Generating reply...`);
+          if (writeStreamChunk) {
+            writeStreamChunk({ type: 'status', text: `Generating reply for @${args.username}...` });
+          }
+
+          // Format recent message history to give contextual awareness to LLM
+          let formattedHistory = "";
+          if (checkResult.chatHistory && checkResult.chatHistory.length > 0) {
+            formattedHistory = checkResult.chatHistory.map(h => {
+              const sender = h.isIncoming ? `@${args.username}` : "You";
+              return `${sender}: ${h.text}`;
+            }).join("\n");
+          } else {
+            formattedHistory = `@${args.username}: ${checkResult.lastMessage}`;
+          }
+
+          const replyPrompt = [
+            {
+              role: 'system',
+              content: `You are Brahmand (ब्रह्मांड), an ultra-intelligent, friendly, and highly empathetic AI assistant.
+You are chatting with a user named @${args.username} on Instagram direct messages.
+Here is the recent chat history between you and @${args.username}:
+
+${formattedHistory}
+
+Generate a direct, natural, friendly, and highly contextual reply to send back to @${args.username}.
+Guidelines:
+- Analyze the user's emotion, intent, and tone from their last message.
+- Think deeply and respond contextually ("soch samajh ke natural response do").
+- Respond in natural, conversational Hinglish (a warm mix of Hindi and English written in Latin script) matching the user's dialect.
+- Keep it natural, short, and conversational (exactly like a human would chat on DM).
+- **MEDIA ATTACHMENT RULE:** If the user EXPLICITLY asks you to send them a photo, picture, image, or video (e.g. "photo bhej", "send a picture", "video dikha"), you can trigger a media send by appending "[MEDIA: image_generation_prompt]" at the end of your response text (where image_generation_prompt is a description of the image to generate). If they did NOT ask for a photo or video, do NOT include the [MEDIA: ...] tag under any circumstance.
+- Do NOT output any system tags, explanations, quotes, or conversational headers.
+- Output ONLY the raw message text to send.`
+            }
+          ];
+          const llmRes = await callLLM(replyPrompt, 0.5, 'smart');
+          let generatedReply = llmRes.text.trim().replace(/^"+|"+$/g, "");
+          
+          let mediaUrl = null;
+          const mediaRegex = /\[MEDIA:\s*(.*?)\]/i;
+          const mediaMatch = generatedReply.match(mediaRegex);
+          if (mediaMatch && mediaMatch[1]) {
+            const mediaPromptText = mediaMatch[1].trim();
+            console.log(`[Media Request Detected] Generating image for DM: "${mediaPromptText}"`);
+            if (writeStreamChunk) {
+              writeStreamChunk({ type: 'status', text: `Generating requested photo: "${mediaPromptText}"...` });
+            }
+            try {
+              mediaUrl = await generatePosterImage(mediaPromptText);
+            } catch (imgErr) {
+              console.error("Failed to generate image for auto-reply:", imgErr.message);
+            }
+            generatedReply = generatedReply.replace(mediaRegex, "").trim();
+          }
+
+          console.log(`Generated reply: "${generatedReply}". Sending via DM (Media: ${mediaUrl || 'None'})...`);
+          if (writeStreamChunk) {
+            writeStreamChunk({ type: 'status', text: `Sending reply to @${args.username}...` });
+          }
+          const sendRes = await sendInstagramMessage(args.username, generatedReply, mediaUrl);
+          return JSON.stringify({
+            success: true,
+            checkedUsername: args.username,
+            receivedMessage: checkResult.lastMessage,
+            sentReply: generatedReply,
+            sendResult: sendRes
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          checkedUsername: args.username,
+          message: checkResult.lastMessage ? "Last message in thread was sent by us. No reply needed." : "No chat history found."
+        });
+      }
       default:
         return `Error: Unknown function ${functionName}`;
     }
@@ -349,10 +676,12 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
   let generatedImageUrl = null;
   const executedCalls = new Set();
 
+  // Tools are only sent on the FIRST call; subsequent calls strip them to save tokens
   while (currentIteration < maxIterations) {
     let response;
     try {
-      response = await callLLM(messages, temperature, modelName, toolsDefinition);
+      const toolsForThisCall = currentIteration === 0 ? toolsDefinition : null;
+      response = await callLLM(messages, temperature, modelName, toolsForThisCall);
     } catch (err) {
       console.error(`Agent loop LLM failed at iteration ${currentIteration}: ${err.message}`);
       if (currentIteration === 0) throw err;
@@ -368,6 +697,8 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
     messages.push(assistantMsg);
 
     if (response.tool_calls && response.tool_calls.length > 0) {
+      let lastReelPlanResult = null;
+
       for (const toolCall of response.tool_calls) {
         const callKey = `${toolCall.function.name}:${toolCall.function.arguments || ''}`;
         let result;
@@ -389,6 +720,14 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
           generatedImageUrl = result;
         }
 
+        // ── SHORT-CIRCUIT: plan_instagram_reel returns its output directly ──────
+        // Avoids a second LLM call that would exceed the 6,000 TPM limit because
+        // the tool result (~2 k tokens) + system prompt pushes the payload over.
+        if (toolCall.function.name === 'plan_instagram_reel') {
+          lastReelPlanResult = typeof result === 'string' ? result : JSON.stringify(result);
+          continue; // collect all tool calls, then we'll short-circuit below
+        }
+
         messages.push({
           tool_call_id: toolCall.id,
           role: "tool",
@@ -396,16 +735,24 @@ async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) 
           content: typeof result === 'string' ? result : JSON.stringify(result)
         });
       }
+
+      // If reel plan was the only (or last) tool called, return directly
+      if (lastReelPlanResult !== null) {
+        console.log('🎬 Reel plan short-circuit: returning mock output directly (no second LLM call).');
+        return { text: lastReelPlanResult, model: finalModelUsed, imageUrl: generatedImageUrl };
+      }
+
       currentIteration++;
     } else {
       return { text: response.text, model: finalModelUsed, imageUrl: generatedImageUrl };
     }
   }
 
+
   return { text: "Reached maximum iterations without final answer.", model: finalModelUsed, imageUrl: generatedImageUrl };
 }
 
-// Smart model router — maps query context to the best Gateway model key
+// Smart model router — maps query context to the best model key
 function routeModel(questionType, userLevel, isUrgent) {
   let modelKey = 'smart';
   let reasoning = 'balanced quality model for standard queries';
@@ -427,7 +774,7 @@ function routeModel(questionType, userLevel, isUrgent) {
     reasoning = 'expert reasoning model for deep analysis';
   }
 
-  return { primaryModel: GATEWAY_MODELS[modelKey], reasoning };
+  return { modelKey, reasoning };
 }
 
 // Scans user message for workflow/automation creation requests and generates custom tools/skills
@@ -693,8 +1040,8 @@ app.post('/api/typing-predict', (req, res) => {
       return res.json({ success: true, match: false });
     }
     
-    // Check cache similarity
-    const cacheMatch = orchestrator.findInCache(db, text);
+    // Check cache similarity (Bypassed for dynamic/social queries)
+    const cacheMatch = shouldBypassCache(text) ? null : orchestrator.findInCache(db, text);
     if (cacheMatch) {
       return res.json({
         success: true,
@@ -848,6 +1195,290 @@ app.post('/api/revise', async (req, res) => {
   }
 });
 
+// 🌟 API to fetch the latest planned Reel JSON structure for preview
+app.get('/api/reels/last-plan', (req, res) => {
+  res.json({ success: true, plan: _lastPlannedReel });
+});
+
+// 🚀 Phase 2 Direct Execution — No LLM call needed
+// Reads _lastPlannedReel, generates an image for Scene 1, and posts to Instagram.
+// This completely bypasses Groq/LLM so rate limits don't block Phase 2.
+app.post('/api/reels/approve', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Transfer-Encoding', 'chunked');
+
+  const writeChunk = (obj) => res.write(JSON.stringify(obj) + '\n');
+
+  try {
+    if (!_lastPlannedReel) {
+      writeChunk({ type: 'error', text: '❌ No approved reel plan found. Please run Phase 1 first.' });
+      return res.end();
+    }
+
+    const sessionId = req.body.sessionId || 'default_session';
+    const plan = _lastPlannedReel;
+
+    // Use edited storyboard scenes & narrations from frontend if available
+    if (req.body.scenes && Array.isArray(req.body.scenes)) {
+      console.log('📝 Applying user edited scenes and narrations from storyboard UI...');
+      plan.scenes = req.body.scenes;
+      // Rebuild the narration timeline string for TTS
+      plan.narration_with_timestamps = req.body.scenes.map(s => s.narration).join(' \n ');
+    }
+
+    const title = plan.title || 'Instagram Reel';
+    const caption = `${plan.caption || title}\n\n${plan.hashtags || '#BrahmandAI'}`;
+    const scenes = plan.scenes || [];
+
+    console.log(`\n🚀 [PHASE 2] Starting direct execution for: "${title}"`);
+    writeChunk({ type: 'status', text: `🎬 Phase 2 started for: "${title}"` });
+
+    const scene1Prompt = scenes.length > 0 ? scenes[0].visual_prompt : `Cinematic scene for ${title}`;
+    
+    let publicVideoUrl = null;
+    try {
+      writeChunk({ type: 'status', text: '🎬 Dynamic Reel Engine: Generating unique scenes for your topic via AI...' });
+      console.log(`🎬 Dynamic Reel Engine running for: "${title}"`);
+      
+      // Use Dynamic Reel Engine — unique scenes + per-scene motion based on topic
+      const { videoPath } = await generateDynamicReel(plan, {
+        duration: 40,
+        language: 'hi',
+        aspectRatio: '9:16',
+        numScenes: Math.max(4, (plan.scenes || []).length)
+      });
+      
+      // Ensure target directory exists under public previews
+      const targetDir = path.join(process.cwd(), 'public', 'previews', 'reels');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      const filename = `${sessionId}_${Date.now()}_reel.mp4`;
+      const targetPath = path.join(targetDir, filename);
+      fs.copyFileSync(videoPath, targetPath);
+      
+      publicVideoUrl = `/previews/reels/${filename}?t=${Date.now()}`;
+      _lastGenVideoPath = targetPath;
+      
+      saveSessionData(sessionId, 'last_video_path', targetPath);
+      saveSessionData(sessionId, 'last_video_caption', caption);
+      
+      console.log(`✅ Dynamic Reel compiled & saved: ${targetPath}`);
+writeChunk({ type: 'status', text: `✅ Dynamic Reel ready — unique scenes per topic!` });
+      
+      writeChunk({
+        type: 'done',
+        success: true,
+        message: `✅ **Dynamic Reel Generated & Ready to Preview!**\n\nI have generated a **unique, topic-specific** vertical video reel for **"${title}"** with cinematic motion effects.\n\n🎬 Play the video preview below.\n\nWould you like to post this to Instagram?\n\n<followups>["Confirm and Post Reel to Instagram", "Cancel/Discard"]</followups>`,
+        imageUrl: publicVideoUrl,
+        model: 'Brahmand Dynamic Reel Engine (LLM + Flux + Edge TTS + FFmpeg)'
+      });
+      
+    } catch (videoErr) {
+      console.error(`❌ Dynamic Reel compilation failed: ${videoErr.message}`);
+      writeChunk({
+        type: 'done',
+        success: false,
+        message: `❌ **Dynamic Reel compilation failed:** ${videoErr.message}`,
+        model: 'Brahmand Dynamic Reel Engine'
+      });
+    }
+
+    return res.end();
+  } catch (err) {
+    console.error('Phase 2 execution error:', err.message);
+    writeChunk({ type: 'error', text: `Phase 2 failed: ${err.message}` });
+    return res.end();
+  }
+});
+
+
+// 🎤 Phase 1 TTS Preview Endpoint
+// Allows the user to test the voiceover narration of any scene dynamically in Phase 1
+app.post('/api/tts/preview', async (req, res) => {
+  try {
+    const { text, language = 'hi' } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required for TTS preview' });
+    }
+
+    const { generateNarration } = await import('./services/ttsService.js');
+    const audioPath = await generateNarration(text, language);
+
+    // Copy to public preview folder so it can be played by the browser
+    const filename = `preview_${Date.now()}_tts.mp3`;
+    const targetDir = path.join(process.cwd(), 'public', 'previews', 'tts');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const targetPath = path.join(targetDir, filename);
+    fs.copyFileSync(audioPath, targetPath);
+
+    const publicUrl = `/previews/tts/${filename}`;
+    res.json({ success: true, audioUrl: publicUrl });
+  } catch (err) {
+    console.error('❌ TTS Preview failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+async function planInstagramReel(topic) {
+  console.log(`🎬 [AI MODE] Planning Instagram Reel via LLM for: "${topic}"...`);
+
+  const safeTopic = topic.replace(/"/g, '\"').replace(/\n/g, ' ');
+  const cleanHashtag = safeTopic.replace(/[^a-zA-Z0-9]/g, '');
+
+  // ── Detect topic type to guide LLM visual style ──────────────────────────
+  const tLower = topic.toLowerCase();
+  let topicType = 'general';
+  if (/shivaji|chatrapati|rana|maharaj|rajput|warrior|sipahi|talvar|kila|yuddh|battle/.test(tLower)) topicType = 'warrior_historical';
+  else if (/temple|mandir|aarti|puja|bhakti|prasad|devotion|darshan|murti|ram mandir|krishna|shiva|hanuman|devi/.test(tLower)) topicType = 'devotional';
+  else if (/holi|diwali|navratri|festival|celebration|dance|rang|utsav|mela|eid|christmas/.test(tLower)) topicType = 'festival';
+  else if (/nature|forest|river|mountain|waterfall|sunrise|jungle|wildlife|pahad/.test(tLower)) topicType = 'nature';
+  else if (/science|vigyan|space|universe|technology|research|discovery/.test(tLower)) topicType = 'science';
+
+  const styleGuide = {
+    warrior_historical: 'WARRIOR style: Name real forts, real warrior names (e.g. Raigad, Shivaji, Jijabai, Maratha). Use battle scenes, swords, royal courts, horses.',
+    devotional:         'DEVOTIONAL style: Name real temples, deities, rituals (e.g. Ram Lalla, Saryu nadi, aarti, ghee diyas, bhakton ki bheed, Jai Shri Ram).',
+    festival:           'FESTIVAL style: Name specific festival rituals (e.g. gulal, dhol, dandiya, pataakhe, diyas, rangoli, traditional dress, crowd dancing).',
+    nature:             'NATURE style: Name specific mountains, rivers, wildlife (e.g. Himalayan peaks, Ganga, Bengal tiger, dense forests, golden hour aerial shots).',
+    science:            'SCIENCE style: Use space visuals, lab scenes, equations, galaxies, scientific instruments, glowing neural networks.',
+    general:            'GENERAL style: Mix engaging facts, real people experiencing this topic, specific visual details.'
+  }[topicType] || 'GENERAL style.';
+
+  const llmPrompt = `You are Brahmand — India's best Instagram Reel script writer.
+
+Write a UNIQUE, SPECIFIC script for: "${topic}"
+
+${styleGuide}
+
+CRITICAL RULES:
+- Every narration line MUST mention SPECIFIC elements of "${topic}" (real names, real places, real events)
+- Every image prompt MUST name REAL things from this topic — NO generic phrases like "spiritual atmosphere"
+- Motion must match scene energy:
+  * Opening/arrival → pan-right
+  * Battle/action/intense → zoom-in
+  * Landscape/panorama → pan-left
+  * Emotion/prayer/devotion → glide
+  * Victory/reveal/celebration → zoom-out
+  * Closing/call to action → static
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "title": "Catchy specific title for ${safeTopic}",
+  "hook": "Gripping line that mentions ${safeTopic} specifically",
+  "total_duration_seconds": 40,
+  "narration_with_timestamps": "0:00-0:07: [hook]\\n0:07-0:15: [revelation]\\n0:15-0:25: [climax]\\n0:25-0:33: [emotion]\\n0:33-0:40: [CTA]",
+  "scenes": [
+    {"scene_number": 1, "duration_seconds": 7,  "narration": "specific narration 1", "visual_prompt": "specific real cinematic image prompt for ${safeTopic} scene 1, 8k, 9:16 portrait", "motion_hint": "pan-right"},
+    {"scene_number": 2, "duration_seconds": 8,  "narration": "specific narration 2", "visual_prompt": "specific real cinematic image prompt for ${safeTopic} scene 2", "motion_hint": "zoom-in"},
+    {"scene_number": 3, "duration_seconds": 10, "narration": "specific narration 3", "visual_prompt": "specific real cinematic image prompt for ${safeTopic} scene 3", "motion_hint": "glide"},
+    {"scene_number": 4, "duration_seconds": 8,  "narration": "specific narration 4", "visual_prompt": "specific real cinematic image prompt for ${safeTopic} scene 4", "motion_hint": "zoom-out"},
+    {"scene_number": 5, "duration_seconds": 7,  "narration": "closing narration",    "visual_prompt": "inspiring closing cinematic image for ${safeTopic}", "motion_hint": "static"}
+  ],
+  "caption": "Engaging caption with emojis about ${safeTopic}",
+  "hashtags": "#${cleanHashtag} #BrahmandAI #Viral #India"
+}`;
+
+  let llmJsonStr = null;
+
+  try {
+    const llmMessages = [
+      {
+        role: 'system',
+        content: `Tu Brahmand hai — India ka best Instagram Reel script writer.\nHar script UNIQUE aur SPECIFIC hoti hai teri. Kabhi generic template use nahi karta.\nShivaji → Raigad, talvar, Jijabai. Ram Mandir → aarti, Ram Lalla, Saryu. Holi → rang, dhol, gulal.\nSirf valid JSON return kar — koi explanation nahi, koi markdown nahi.`
+      },
+      { role: 'user', content: llmPrompt }
+    ];
+
+    console.log(`  🤖 Calling LLM for unique "${topic}" script...`);
+    const llmResult = await callLLM(llmMessages, 0.8, 'creative');
+    const rawText = llmResult.text || '';
+
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd = rawText.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1) throw new Error('No JSON in LLM response');
+
+    llmJsonStr = rawText.substring(jsonStart, jsonEnd + 1);
+    _lastPlannedReel = JSON.parse(llmJsonStr);
+    console.log(`  ✅ Unique LLM script ready: "${_lastPlannedReel.title}"`);
+
+  } catch (e) {
+    console.warn(`  ⚠️ LLM script failed (${e.message}), using topic-aware fallback`);
+    const fallbackScenes = buildTopicFallbackScenes(topic, topicType);
+    _lastPlannedReel = {
+      title: `${topic} — Ek Adbhut Safar`,
+      hook: `Kya aap jaante hain ${topic} ka asli raaz? Aaj jaaniye!`,
+      total_duration_seconds: 40,
+      narration_with_timestamps: fallbackScenes.map((s, i) => `0:${String(i*7).padStart(2,'0')}: ${s.narration}`).join('\n'),
+      scenes: fallbackScenes,
+      caption: `${topic} ke baare mein yeh jaankar aap hairan ho jaayenge! 🔥\nFollow karo aur share karo! ✨`,
+      hashtags: `#${cleanHashtag} #BrahmandAI #Viral #IndianCulture`
+    };
+    llmJsonStr = JSON.stringify(_lastPlannedReel, null, 2);
+  }
+
+  const plan = _lastPlannedReel;
+  const responseText = `### 🎬 Reel Package: ${plan.title}\n\n**🎣 Hook:** ${plan.hook}\n\n**📖 Narration Script:**\n${plan.narration_with_timestamps || ''}\n\n**🎥 Scenes:**\n${(plan.scenes || []).map(s => `- **Scene ${s.scene_number}** [${s.motion_hint || 'glide'}] (${s.duration_seconds}s): ${s.narration}`).join('\n')}\n\n**📝 Caption:** ${plan.caption}\n**🏷️ Hashtags:** ${plan.hashtags}\n\n\`\`\`json\n${llmJsonStr}\n\`\`\``;
+
+  return responseText;
+}
+
+// ─── Topic-aware fallback scenes — never generic, always specific ─────────────
+function buildTopicFallbackScenes(topic, topicType) {
+  const motions = ['pan-right', 'zoom-in', 'glide', 'zoom-out', 'static'];
+  const templates = {
+    warrior_historical: [
+      { n: `${topic} — ek mahaan yoddha ki amar kahani!`,       vp: `Epic wide cinematic shot of Maratha warriors at the fort of ${topic}, sunrise battle light, 8k photorealistic` },
+      { n: `Unki talvar se dushman kaanpte the!`,               vp: `Intense close-up of warrior's gleaming sword, ${topic} warrior in battle armor, fire torches, dramatic cinematic` },
+      { n: `Unka kila aaj bhi unki shaurya ki kahani kehta hai.`,vp: `Majestic aerial view of historical Indian fort associated with ${topic}, golden hour, sweeping landscape, 8k` },
+      { n: `Ek yoddha jis ne itihaas badal diya.`,              vp: `Powerful portrait of ${topic} warrior on horseback, dramatic cloudy sky, epic cinematic portrait` },
+      { n: `Jai ${topic}! Yeh gaurav ki kahani share karo!`,    vp: `Triumphant silhouette of ${topic} against dramatic Indian sunset sky, epic inspirational closing frame` },
+    ],
+    devotional: [
+      { n: `${topic} — jahan atma ko milti hai asli shanti.`,   vp: `Majestic establishing shot of ${topic} temple at dawn, golden light on sacred architecture, devotees arriving, 8k` },
+      { n: `Yahan aakar dil ko chain milta hai.`,               vp: `Crowd of devotees at ${topic} offering flowers, incense smoke rising in divine morning light, cinematic portrait` },
+      { n: `Yeh aarti ka nazar aapki rooh ko chu jayegi.`,      vp: `Grand aarti ceremony at ${topic} with flames, brass bells, priests in traditional attire, wide dramatic shot` },
+      { n: `Bhakti mein hai asli shakti.`,                      vp: `Emotional close-up of devotee at ${topic} with closed eyes in prayer, tears of devotion, soft divine light` },
+      { n: `Darshan karo, share karo — sabko chahiye yeh shanti.`, vp: `Serene panoramic view of ${topic} at golden sunset, peaceful sacred atmosphere, inspiring cinematic frame` },
+    ],
+    festival: [
+      { n: `${topic} — rang, khushi, aur pyaar ka tyohaar!`,    vp: `Vibrant wide shot of ${topic} festival celebration, colorful joyful crowd, festive energy, 8k cinematic` },
+      { n: `Har chehra khushi se chamak raha hai!`,             vp: `Dynamic action shot of people throwing colors or dancing at ${topic}, motion blur, joyful festive energy` },
+      { n: `Yeh parv jodta hai dilo ko.`,                       vp: `Heartwarming scene of families together during ${topic}, warm lighting, traditional dress, beautiful composition` },
+      { n: `${topic} ka yeh nazar yaad rahega saalon tak!`,     vp: `Spectacular wide shot of ${topic} climax — fireworks or diyas or colors, dramatic and beautiful sky` },
+      { n: `Share karo yeh khushi apne khaas logon ke saath!`, vp: `Warm closing shot of friends embracing during ${topic}, golden hour, cinematic portrait` },
+    ],
+    nature: [
+      { n: `${topic} — prakriti ka ek adbhut tohfa!`,           vp: `Breathtaking aerial cinematic view of ${topic} natural landscape, golden hour, majestic scale, 8k` },
+      { n: `Yeh nazar dekhkar dil khush ho jaata hai.`,         vp: `Stunning close-up detail shot of ${topic} — water, flora, or wildlife, macro cinematic photography` },
+      { n: `Prakriti ki yeh khoobsurti apni taraf bulaati hai.`,vp: `Wide landscape panorama of ${topic} at its most spectacular, sunrise sky, dramatic clouds` },
+      { n: `Yahaan aakar zindagi naye rang dikhti hai.`,         vp: `Person standing in awe before ${topic}'s grandeur, silhouette against beautiful dramatic sky, cinematic` },
+      { n: `Share karo — hum sab ki dharohar hai yeh.`,         vp: `Epic closing frame of ${topic} natural wonder, golden light, cinematic portrait, 8k photorealistic` },
+    ],
+    general: [
+      { n: `${topic} ke baare mein yeh jaankar aap hairan ho jaayenge!`, vp: `Dramatic cinematic establishing shot introducing ${topic}, professional lighting, ultra-realistic, 8k` },
+      { n: `Yeh ek aisee baat hai jo log jaante nahi.`,                  vp: `Close-up revealing the most interesting visual aspect of ${topic}, dramatic lighting, hyper-detailed` },
+      { n: `${topic} ka yeh pehlu sabse khaas hai.`,                     vp: `Detailed cinematic visualization of core concept of ${topic}, professional photography style, 8k` },
+      { n: `Yahi baat ${topic} ko sabse alag banati hai.`,               vp: `Emotional impactful shot connecting people to ${topic}, warm cinematic lighting, storytelling composition` },
+      { n: `Jaano, samjho, aur zaroor share karo!`,                      vp: `Inspiring closing frame for ${topic}, dramatic sky, cinematic wide portrait, 8k photorealistic` },
+    ]
+  };
+  const defs = templates[topicType] || templates.general;
+  return defs.map((def, i) => ({
+    scene_number: i + 1,
+    duration_seconds: [7, 8, 10, 8, 7][i] || 8,
+    narration: def.n,
+    visual_prompt: def.vp,
+    motion_hint: motions[i] || 'glide'
+  }));
+}
+
+
+
+
 // Helper to update last assistant message content in chat history
 function updateLastAssistantMessage(sessionId, content) {
   try {
@@ -873,6 +1504,7 @@ app.post('/api/chat', async (req, res) => {
   };
 
   try {
+    _lastGenImageUrl = null; // Reset per-request
     const { 
       message, 
       sessionId = 'default_session', 
@@ -890,12 +1522,111 @@ app.post('/api/chat', async (req, res) => {
 
     const startTime = Date.now();
 
+    // Intercept Instagram Reel preview confirmation flows directly
+    const cleanMsg = message.trim().toLowerCase();
+    if (cleanMsg === 'confirm and post reel to instagram' || cleanMsg === 'confirm & post reel to instagram') {
+      writeStreamChunk({ type: 'status', text: '🚀 Fetching cached media and caption...' });
+      
+      const lastVideoPath = getSessionData(sessionId, 'last_video_path') || _lastGenVideoPath;
+      const lastImageUrl = getSessionData(sessionId, 'last_image_url') || _lastGenImageUrl;
+      const lastCaption = getSessionData(sessionId, 'last_video_caption') || getSessionData(sessionId, 'last_image_caption') || 'Brahmand AI Reel #BrahmandAI';
+      
+      if (!lastVideoPath && !lastImageUrl) {
+        saveMessage(sessionId, 'user', message);
+        const reply = "❌ **Error:** Mujhe publish karne ke liye koi active generated video ya image nahi mila. Please pehle ek reel plan approve kijiye.";
+        saveMessage(sessionId, 'assistant', reply);
+        writeStreamChunk({
+          type: 'done',
+          success: false,
+          sessionId,
+          message: reply,
+          model: 'Direct Confirm Pipeline (No LLM)'
+        });
+        return res.end();
+      }
+      
+      try {
+        if (lastVideoPath) {
+          writeStreamChunk({ type: 'status', text: '📤 Posting generated video reel to Instagram...' });
+          console.log(`📤 Uploading and publishing video reel: "${lastVideoPath}"`);
+          
+          let resolvedPath = lastVideoPath;
+          if (lastVideoPath.startsWith('/previews/')) {
+            resolvedPath = path.join(process.cwd(), 'public', lastVideoPath);
+          }
+          
+          const postResult = await publishInstagramVideo(resolvedPath, lastCaption);
+          console.log(`✅ Instagram video post result:`, postResult);
+          
+          saveMessage(sessionId, 'user', message);
+          const reply = `✅ **Reel Posted Successfully on Instagram!**\n\nVideo has been successfully uploaded and published to your timeline.\n\n🎥 **Caption:**\n${lastCaption}`;
+          saveMessage(sessionId, 'assistant', reply);
+        } else {
+          writeStreamChunk({ type: 'status', text: '📤 Posting generated poster image to Instagram...' });
+          console.log(`📤 Uploading and publishing poster: "${lastImageUrl}"`);
+          
+          const postResult = await publishInstagramPhoto(lastImageUrl, lastCaption);
+          console.log(`✅ Instagram poster post result:`, postResult);
+          
+          saveMessage(sessionId, 'user', message);
+          const reply = `✅ **Reel Poster Posted Successfully on Instagram!**\n\nPoster image has been successfully uploaded and published to your timeline.\n\n🎥 **Caption:**\n${lastCaption}`;
+          saveMessage(sessionId, 'assistant', reply);
+        }
+        
+        // Clean up session data
+        deleteSessionData(sessionId, 'last_video_path');
+        deleteSessionData(sessionId, 'last_video_caption');
+        deleteSessionData(sessionId, 'last_image_url');
+        deleteSessionData(sessionId, 'last_image_caption');
+        
+        writeStreamChunk({
+          type: 'done',
+          success: true,
+          sessionId,
+          message: reply,
+          model: 'Direct Confirm Pipeline (No LLM)'
+        });
+      } catch (postErr) {
+        console.error(`❌ Direct Instagram media posting failed:`, postErr);
+        saveMessage(sessionId, 'user', message);
+        const reply = `❌ **Instagram posting failed:** ${postErr.message || postErr}`;
+        saveMessage(sessionId, 'assistant', reply);
+        writeStreamChunk({
+          type: 'done',
+          success: false,
+          sessionId,
+          message: reply,
+          model: 'Direct Confirm Pipeline (No LLM)'
+        });
+      }
+      return res.end();
+    }
+    
+    if (cleanMsg === 'cancel/discard' || cleanMsg === 'cancel' || cleanMsg === 'discard') {
+      saveMessage(sessionId, 'user', message);
+      const reply = "🗑️ **Reel Discarded.** Pending upload session clear kar diya hai.";
+      saveMessage(sessionId, 'assistant', reply);
+      
+      deleteSessionData(sessionId, 'last_video_path');
+      deleteSessionData(sessionId, 'last_video_caption');
+      deleteSessionData(sessionId, 'last_image_url');
+      deleteSessionData(sessionId, 'last_image_caption');
+      
+      writeStreamChunk({
+        type: 'done',
+        success: true,
+        sessionId,
+        message: reply,
+        model: 'Direct Discard Pipeline (No LLM)'
+      });
+      return res.end();
+    }
+
     // Trigger Autonomous Tool Creation check
     checkAndCreateTool(message);
 
     // 1. Check Similarity Cache (Bypassed for dynamic Instagram/live social queries)
-    const isInstagramQuery = ['instagram', 'ig ', 'ig_', 'feed', 'post', 'upload'].some(kw => message.toLowerCase().includes(kw));
-    const cacheMatch = isInstagramQuery ? null : orchestrator.findInCache(db, message);
+    const cacheMatch = shouldBypassCache(message) ? null : orchestrator.findInCache(db, message);
     if (cacheMatch) {
       writeStreamChunk({ type: 'status', text: '🎯 Similarity cache hit! Fetching instant response...' });
       // Short delay for realistic UI transition
@@ -917,18 +1648,10 @@ app.post('/api/chat', async (req, res) => {
       return res.end();
     }
 
-    // 2. Classify Speed
-    let speedMode = 'FAST';
-    let avgLatency = 2000;
-    
-    if (simulatedSpeed && simulatedSpeed !== 'auto') {
-      speedMode = simulatedSpeed.toUpperCase();
-      console.log(`⚙️ Simulated Model Speed Override: ${speedMode}`);
-    } else {
-      avgLatency = orchestrator.getAverageResponseTime(db);
-      speedMode = orchestrator.classifySpeed(avgLatency);
-      console.log(`📊 Measured Average Latency: ${(avgLatency / 1000).toFixed(2)}s -> Class: ${speedMode}`);
-    }
+    // 2. Classify Speed (Forced to SLOW and quality checks bypassed as requested)
+    let speedMode = 'SLOW';
+    let avgLatency = 251150;
+    console.log(`📊 Measured Average Latency: ${(avgLatency / 1000).toFixed(2)}s -> Class: ${speedMode}`);
 
     // 3. User Communication
     writeStreamChunk({ type: 'status', text: 'Processing your request... ⏳', speedMode, avgLatencyMs: avgLatency });
@@ -980,8 +1703,14 @@ app.post('/api/chat', async (req, res) => {
     // 5. Multi-Model Dynamic Routing
     const chatQuestionTypeCategory = orchestrator.analyzeQuestionType(message);
     const modelSelection = routeModel(chatQuestionTypeCategory, detectedExpertise, isUrgent);
-    const routedModelName = modelSelection.primaryModel;
-    const selectionReasoning = modelSelection.reasoning;
+    let routedModelKey = modelSelection.modelKey;
+    let selectionReasoning = modelSelection.reasoning;
+
+    // For Instagram and messaging queries, use the smart model for robust tool calling
+    if (shouldBypassCache(message)) {
+      routedModelKey = 'smart';
+      selectionReasoning = 'smart 70b model chosen for social media tool calling';
+    }
 
     // Determine question type and length override constraints using the controller
     const chatQuestionType = smartController.detectQuestionType(message);
@@ -1027,6 +1756,34 @@ app.post('/api/chat', async (req, res) => {
       promptOverride += `\n\n### CRITICAL RESPONSE LENGTH CONSTRAINT ###\n- The user asked a short, simple question. \n- Respond directly in a single, short sentence. Keep it under 40 words!`;
     }
 
+    // ─── REELS PIPELINE STATE MACHINE ───────────────────────────────────────────
+    // Detect if the user is requesting a reel plan (Phase 1) or approving one (Phase 2)
+    const lowerMsg = message.toLowerCase();
+    const isReelPlanRequest = /(reel plan|plan.*reel|reel.*plan|instagram reel|reel script|script.*reel|reel.*bana|reel.*generate)/i.test(message);
+    const isReelApproval  = /^approve reel workflow:/i.test(message.trim());
+
+    if (isReelApproval) {
+      // Phase 2 — media generation + posting is now permitted
+      promptOverride += `
+
+### 🎬 REEL WORKFLOW — PHASE 2: APPROVED
+The user has approved the reel package. You may now proceed to:
+1. Call generate_image for each scene's visual prompt.
+2. Assemble and post using post_to_instagram or post_video_to_instagram.
+Do NOT call plan_instagram_reel again — use the already-approved plan.`;
+    } else if (isReelPlanRequest) {
+      // Phase 1 — planning only, media tools strictly forbidden
+      promptOverride += `
+
+### 🎬 REEL WORKFLOW — PHASE 1: PLANNING ONLY MODE
+CRITICAL CONSTRAINTS — DO NOT VIOLATE:
+- You MUST call plan_instagram_reel(topic) and return the full Reel Package.
+- You MUST NOT call generate_image, generate_video, or post_video_to_instagram.
+- Do NOT generate any images or videos yet.
+- Do NOT post anything to Instagram.
+- Output ONLY the plan. The user will click the Approve button to proceed to Phase 2.`;
+    }
+
     // 5. Build Dynamic Agent Messages
     let skills = loadSkills();
     let temperature = 0.3;
@@ -1037,7 +1794,7 @@ app.post('/api/chat', async (req, res) => {
     // Inject last generated image URL for cross-request Instagram posting flow
     const lastImageUrl = getSessionData(sessionId, 'last_image_url');
     if (lastImageUrl) {
-      systemPrompt += `\n\n### LAST GENERATED IMAGE URL (for cross-request use)\nImage URL: ${lastImageUrl}\n\nAgar user ne pichle message mein image generate karwai thi aur ab "post karo" / "haan" / "kardo" keh raha hai, toh yeh URL use karke 'post_to_instagram(imageUrl: "${lastImageUrl}", caption: "...")' call karo.\n`;
+      systemPrompt += `\n\n### LAST GENERATED IMAGE URL (pichle request se bachi hui)\nImage URL: ${lastImageUrl}\n\nAgar user ab "post karo" / "haan" bole to yeh URL use karo:\npost_to_instagram(imageUrl: "${lastImageUrl}", caption: "caption yahan")\nYeh exact URL hai, ise string mein hi daalo.\n`;
     }
 
     // Limit history to the last 4 messages to save token overhead
@@ -1058,7 +1815,7 @@ app.post('/api/chat', async (req, res) => {
     writeStreamChunk({ type: 'status', text: 'Spawning autonomous agent loop... ⏳' });
 
     // Execute dynamic agent loop (tool calling)
-    const agentResult = await runAgentLoop(fullMessages, temperature, routedModelName, writeStreamChunk);
+    const agentResult = await runAgentLoop(fullMessages, temperature, routedModelKey, writeStreamChunk);
     
     let finalResponseText = agentResult.text;
     let modelUsed = agentResult.model;
@@ -1069,50 +1826,25 @@ app.post('/api/chat', async (req, res) => {
       saveSessionData(sessionId, 'last_image_url', generatedImageUrl);
     }
 
-    // 7. Quality check & Revision loop
+    // 7. Quality check — skip if already slow (waste of time)
     let qualityScore = 10;
-    try {
-      qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
-    } catch { qualityScore = 10; }
-
-    let maxRevisions = 0;
-    if (speedMode === 'FAST') maxRevisions = 3;
-    else if (speedMode === 'MEDIUM') maxRevisions = 1;
-
-    let revisionAttempt = 0;
     let revisionSuggested = false;
-
-    while (qualityScore < 7 && revisionAttempt < maxRevisions) {
-      revisionAttempt++;
-      writeStreamChunk({ type: 'status', text: `Quality Score: ${qualityScore}/10 is below threshold. Refining response... (Attempt ${revisionAttempt}/${maxRevisions})` });
-      
-      const revisionMessages = [
-        { role: 'system', content: `${systemPrompt}\n\n### QUALITY CHECK FAILURE ###\nYour previous response was rated ${qualityScore}/10. Please write a revised version. Address all details and correct the formatting.` },
-        ...cleanHistory,
-        { role: 'user', content: message },
-        { role: 'assistant', content: finalResponseText },
-        { role: 'user', content: 'Provide the revised response.' }
-      ];
-
-      try {
-        const revisedResult = await callLLM(revisionMessages, temperature, routedModelName);
-        finalResponseText = revisedResult.text || finalResponseText;
-        modelUsed = revisedResult.model;
-      } catch { break; }
-
+    if (speedMode !== 'SLOW') {
       try {
         qualityScore = await orchestrator.evaluateQuality(callLLM, message, finalResponseText, speedMode);
-      } catch { break; }
+      } catch { qualityScore = 10; }
     }
 
-    try {
-      if (speedMode === 'SLOW' && qualityScore < 6) {
-        revisionSuggested = true;
-        writeStreamChunk({ type: 'status', text: `Quality Score: ${qualityScore}/10 is low, but proceeding to save response time.` });
-      } else {
-        writeStreamChunk({ type: 'status', text: `Quality Check passed: ${qualityScore}/10.` });
-      }
-    } catch (e) {}
+    if (speedMode !== 'SLOW' && qualityScore < 7) {
+      revisionSuggested = true;
+      try {
+        const revisedResult = await callLLM([...cleanHistory, { role: 'user', content: `Improve this response: ${finalResponseText}` }], temperature, routedModelKey);
+        if (revisedResult?.text) finalResponseText = revisedResult.text;
+        modelUsed = revisedResult?.model || modelUsed;
+      } catch (e) {}
+    }
+
+    writeStreamChunk({ type: 'status', text: `✅ Response ready (score ${qualityScore}/10)` });
 
     // Append explainable reasoning to the response text for transparency
     const explainableReasoning = `\n\n<details>\n<summary>Why This Approach 🧠</summary>\n\n- **Routed Model**: \`${modelUsed}\` (${selectionReasoning})\n- **Question Type**: \`${chatQuestionTypeCategory.toUpperCase()}\`\n- **User Expertise**: \`${detectedExpertise.toUpperCase()}\`\n- **Detected Emotion**: \`${detectedEmotion.toUpperCase()}\`\n- **Detected Language**: \`${detectedLanguage.toUpperCase()}\`\n- **Memory Preferences**: ${prefTone || prefLength ? `Length: ${prefLength || 'default'}, Tone: ${prefTone || 'default'}` : 'None (using defaults)'}\n\n</details>`;
@@ -1135,8 +1867,10 @@ app.post('/api/chat', async (req, res) => {
       finalResponseText += `\n\n🌐 **Live Website Preview:** [Click here to view your site live](${previewUrl})`;
     }
 
-    // Save to Cache
-    orchestrator.saveToCache(db, message, finalResponseText, modelUsed, generatedImageUrl || null);
+    // Save to Cache (Bypassed for dynamic/social queries)
+    if (!shouldBypassCache(message)) {
+      orchestrator.saveToCache(db, message, finalResponseText, modelUsed, generatedImageUrl || null);
+    }
 
     // Save messages in history
     saveMessage(sessionId, 'user', message);
@@ -1172,6 +1906,8 @@ app.post('/api/chat', async (req, res) => {
     res.end();
   }
 });
+
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

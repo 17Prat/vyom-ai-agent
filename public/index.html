@@ -853,6 +853,89 @@
       }
     }
 
+    // Approve reel workflow — triggers Phase 2 via dedicated LLM-free endpoint
+    async function approveReelWorkflow(title) {
+      // Visual feedback: disable all approve buttons
+      document.querySelectorAll('button').forEach(btn => {
+        if (btn.textContent.trim().startsWith('Approve')) {
+          btn.disabled = true;
+          btn.style.opacity = '0.6';
+          btn.style.cursor = 'not-allowed';
+          btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Starting Phase 2...';
+        }
+      });
+
+      // Query all edited scene cards from the DOM
+      const scenes = [];
+      document.querySelectorAll('.storyboard-scene-card').forEach(card => {
+        const sceneNum = parseInt(card.getAttribute('data-scene-idx')) || 1;
+        const durationSec = parseInt(card.getAttribute('data-duration')) || 8;
+        const narration = card.querySelector('.scene-narration-input').value.trim();
+        const visualPrompt = card.querySelector('.scene-prompt-input').value.trim();
+        scenes.push({
+          scene_number: sceneNum,
+          duration_seconds: durationSec,
+          narration: narration,
+          visual_prompt: visualPrompt
+        });
+      });
+
+      console.log('Sending approved scenes to backend:', scenes);
+
+      // Show user message in chat
+      const feed = document.getElementById('activeChatContainer');
+      feed.style.display = 'flex';
+      appendMessage(`✅ Approve Reel Workflow: "${title}"`, 'user');
+      saveSessionMessage(currentSessionId, `✅ Approve Reel Workflow: "${title}"`, 'user');
+      appendLoadingStatus('🚀 Phase 2 pipeline starting...');
+      setGeneratingState(true);
+
+      try {
+        const response = await fetch('/api/reels/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            title, 
+            sessionId: currentSessionId,
+            scenes: scenes.length > 0 ? scenes : null
+          })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line);
+              if (chunk.type === 'status') {
+                updateLoadingStatus(chunk.text);
+              } else if (chunk.type === 'done' || chunk.type === 'error') {
+                removeLoading();
+                const msgText = chunk.message || chunk.text || 'Phase 2 complete.';
+                appendMessage(msgText, 'bot', chunk.model || null, chunk.imageUrl || null);
+                saveSessionMessage(currentSessionId, msgText, 'bot', chunk.model, chunk.imageUrl);
+              }
+            } catch (e) { /* skip malformed chunk */ }
+          }
+        }
+      } catch (err) {
+        removeLoading();
+        appendMessage(`❌ Phase 2 failed: ${err.message}`, 'bot');
+      } finally {
+        setGeneratingState(false);
+      }
+    }
+
+
     // Background revision trigger
     async function triggerBackgroundRevision(btnEl, originalQuery, previousText, msgContentId) {
       const panel = btnEl.closest('.revision-panel');
@@ -964,6 +1047,31 @@
 
       let rawText = text;
       
+      // Check if this is a Reels Plan JSON
+      let isReelPlan = false;
+      let plan = null;
+      try {
+        let jsonStr = '';
+        const codeBlockMatch = rawText.match(/```json\s*([\s\S]*?)\s*```/i);
+        if (codeBlockMatch) {
+          jsonStr = codeBlockMatch[1];
+        } else {
+          const firstBrace = rawText.indexOf('{');
+          const lastBrace = rawText.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            jsonStr = rawText.substring(firstBrace, lastBrace + 1);
+          }
+        }
+        
+        if (jsonStr) {
+          const parsed = JSON.parse(jsonStr.trim());
+          if ((parsed.scenes || parsed.script) && (parsed.title || parsed.topic)) {
+            isReelPlan = true;
+            plan = parsed;
+          }
+        }
+      } catch(e) {}
+
       // Extract follow-ups
       let followups = [];
       const followupsRegex = /<followups>([\s\S]*?)<\/followups>/i;
@@ -986,7 +1094,194 @@
         rawText = rawText.replace(thinkRegex, '').trim();
       }
 
-      let parsedContent = sender === 'bot' ? marked.parse(rawText) : `<p>${escapeHtml(rawText)}</p>`;
+      let parsedContent;
+      if (isReelPlan) {
+        let scenesHtml = '';
+        const scenesList = plan.scenes || plan.script || [];
+        scenesList.forEach((scene, sceneIdx) => {
+          const sceneId = 'scene_' + Math.random().toString(36).substring(2, 9);
+          const promptId = sceneId + '_prompt';
+          const narrationId = sceneId + '_narration';
+          const imgPreviewId = sceneId + '_imgpreview';
+          const fileInputId = sceneId + '_fileinput';
+          const sceneNum = scene.scene_number || scene.scene || (sceneIdx + 1);
+          const durationSec = scene.duration_seconds || scene.duration || 8;
+          scenesHtml += `
+            <div class="storyboard-scene-card" data-scene-idx="${sceneNum}" data-duration="${durationSec}" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: box-shadow 0.2s;">
+              <!-- Scene Header -->
+              <div style="font-size: 0.8rem; font-weight: 700; color: #10A37F; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-clapperboard"></i> Scene ${sceneNum} (${durationSec}s)
+              </div>
+
+              <!-- Narration (Editable) -->
+              <div style="margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+                  <label style="color: #64748B; font-weight: 600; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; font-style: normal; margin: 0;">
+                    <i class="fa-solid fa-microphone" style="color: #10A37F;"></i> Voiceover / Narration
+                    <span style="font-weight: 400; color: #94a3b8; font-size: 0.72rem; margin-left: 4px;">(editable)</span>
+                  </label>
+                  
+                  <!-- 🔊 Play TTS Preview Button -->
+                  <button onclick="(function(btn, nid){ 
+                    const txt = document.getElementById(nid).value.trim(); 
+                    if(!txt){ alert('Pehle text enter kijiye!'); return; }
+                    btn.disabled = true; 
+                    const origHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class=\'fa-solid fa-spinner fa-spin\'></i> Loading...'; 
+                    fetch('/api/tts/preview', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ text: txt })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                      btn.disabled = false;
+                      btn.innerHTML = origHtml;
+                      if(data.audioUrl){
+                        const audio = new Audio(data.audioUrl);
+                        audio.play();
+                      } else {
+                        alert('TTS generation failed!');
+                      }
+                    })
+                    .catch(e => {
+                      btn.disabled = false;
+                      btn.innerHTML = origHtml;
+                      alert('Error: ' + e.message);
+                    });
+                  })(this, '${narrationId}')" 
+                  style="background: #E2E8F0; color: #1E293B; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; gap: 4px; transition: all 0.2s; outline: none;"
+                  onmouseover="this.style.background='#CBD5E1'"
+                  onmouseout="this.style.background='#E2E8F0'">
+                    <i class="fa-solid fa-volume-high"></i> Listen Voice
+                  </button>
+                </div>
+                <textarea id="${narrationId}" class="scene-narration-input"
+                  rows="2"
+                  style="width: 100%; box-sizing: border-box; font-size: 0.9rem; color: #1e293b; background: white; border: 1.5px solid #CBD5E1; border-radius: 8px; padding: 8px 12px; resize: vertical; font-family: inherit; line-height: 1.55; outline: none; transition: border-color 0.2s;"
+                  onfocus="this.style.borderColor='#10A37F'"
+                  onblur="this.style.borderColor='#CBD5E1'"
+                >${escapeHtml(scene.narration || '')}</textarea>
+              </div>
+
+              <!-- Visual Prompt (Editable) -->
+              <div style="background-color: #F1F5F9; padding: 10px 12px; border-radius: 10px; border-left: 3px solid #10A37F; margin-bottom: 10px;">
+                <label style="color: #475569; font-weight: 600; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font-style: normal;">
+                  <i class="fa-regular fa-image" style="color: #64748B;"></i> Visual Prompt
+                  <span style="font-weight: 400; color: #94a3b8; font-size: 0.72rem; margin-left: 4px;">(editable)</span>
+                </label>
+                <textarea id="${promptId}" class="scene-prompt-input"
+                  rows="3"
+                  style="width: 100%; box-sizing: border-box; font-size: 0.85rem; color: #334155; background: white; border: 1.5px solid #CBD5E1; border-radius: 8px; padding: 8px 12px; resize: vertical; font-family: inherit; line-height: 1.6; font-style: italic; outline: none; transition: border-color 0.2s;"
+                  onfocus="this.style.borderColor='#10A37F'"
+                  onblur="this.style.borderColor='#CBD5E1'"
+                >${escapeHtml(scene.visual_prompt || scene.prompt || '')}</textarea>
+              </div>
+
+              <!-- Image Section -->
+              <div style="display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
+                <!-- Upload Image -->
+                <div>
+                  <input type="file" id="${fileInputId}" accept="image/*" style="display:none;"
+                    onchange="(function(inp, prevId){ const f = inp.files[0]; if(!f) return; const r = new FileReader(); r.onload = e => { const el = document.getElementById(prevId); el.src = e.target.result; el.style.display='block'; }; r.readAsDataURL(f); })(this, '${imgPreviewId}')"
+                  />
+                  <button onclick="document.getElementById('${fileInputId}').click()"
+                    style="background: white; color: #475569; border: 1.5px dashed #CBD5E1; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 6px; transition: all 0.2s; outline: none;"
+                    onmouseover="this.style.borderColor='#10A37F'; this.style.color='#10A37F';"
+                    onmouseout="this.style.borderColor='#CBD5E1'; this.style.color='#475569';">
+                    <i class="fa-solid fa-upload"></i> Upload Image
+                  </button>
+                </div>
+                <!-- Generate Scene Image via AI -->
+                <button
+                  onclick="(function(btn, pid){ const prompt = document.getElementById(pid).value.trim(); if(!prompt){alert('Pehle visual prompt likho!'); return;} btn.disabled=true; btn.innerHTML='<i class=\\'fa-solid fa-spinner fa-spin\\'></i> Generating...'; sendFollowupText('Generate image: ' + prompt); setTimeout(()=>{btn.disabled=false; btn.innerHTML='<i class=\\'fa-solid fa-wand-magic-sparkles\\'></i> Generate Scene Image';}, 3000);})(this, '${promptId}')"
+                  style="background: linear-gradient(135deg, #10A37F, #059669); color: white; border: none; padding: 7px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; transition: all 0.2s; box-shadow: 0 2px 8px rgba(16,163,127,0.3); outline: none;"
+                  onmouseover="this.style.transform='translateY(-1px)'"
+                  onmouseout="this.style.transform='translateY(0)'">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Scene Image
+                </button>
+              </div>
+
+              <!-- Image Preview -->
+              <img id="${imgPreviewId}" src="" alt="Scene Image"
+                style="display:none; margin-top: 10px; max-width: 100%; max-height: 240px; border-radius: 10px; border: 2px solid #E2E8F0; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
+              />
+            </div>
+          `;
+        });
+
+        const totalDuration = plan.total_duration_seconds || (plan.meta && plan.meta.target_duration_seconds) || 45;
+        const captionText = plan.caption || (plan.social && plan.social.caption) || '';
+        const hashtagsText = plan.hashtags || (plan.social && plan.social.hashtags) || '';
+
+        // Extract rawText content up to the JSON block to display it in the message body
+        let previewIntroText = '';
+        const firstBraceIndex = rawText.indexOf('{');
+        const codeBlockIndex = rawText.indexOf('```json');
+        let stopIndex = -1;
+        if (codeBlockIndex !== -1) stopIndex = codeBlockIndex;
+        else if (firstBraceIndex !== -1) stopIndex = firstBraceIndex;
+        
+        if (stopIndex !== -1) {
+          previewIntroText = rawText.substring(0, stopIndex).trim();
+        } else {
+          previewIntroText = rawText;
+        }
+
+        const introHtml = previewIntroText ? `<div style="margin-bottom: 20px; line-height: 1.6; font-size: 0.95rem;">${marked.parse(previewIntroText)}</div>` : '';
+
+        parsedContent = `
+          ${introHtml}
+          <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white; border-radius: 16px; padding: 20px 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px;">
+              <div style="font-size: 1.25rem; font-weight: 700; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-film" style="color: #10A37F;"></i>
+                <span>${escapeHtml(plan.title || 'Instagram Reel Plan')}</span>
+              </div>
+              <span style="background-color: #10A37F; color: white; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase;">
+                ${totalDuration}s Reel
+              </span>
+            </div>
+            
+            <div style="font-size: 0.95rem; opacity: 0.9; margin-bottom: 12px;" id="reelTopicHeader">
+              <span style="font-weight: 600; color: #38bdf8;">Topic:</span> "${escapeHtml(plan.topic || plan.title || '')}"
+            </div>
+            <div style="font-size: 0.95rem; opacity: 0.9; margin-bottom: 16px;">
+              <span style="font-weight: 600; color: #10A37F;">Hook (0-3s):</span> "${escapeHtml(plan.hook || '')}"
+            </div>
+
+            <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="font-weight: 700; font-size: 0.85rem; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;"><i class="fa-solid fa-microphone"></i> Narration Timeline</div>
+              <div style="font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; opacity: 0.9;">${escapeHtml(plan.narration_with_timestamps || '')}</div>
+            </div>
+            
+            <div style="color: #0d0d0d; background: white; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+              <div style="font-weight: 700; font-size: 0.9rem; color: #475569; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Scenes Storyboard</div>
+              ${scenesHtml}
+            </div>
+
+            <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
+              <div style="font-weight: 700; font-size: 0.85rem; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Instagram Metadata</div>
+              <div style="font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5;"><span style="font-weight: 600; color: white;">Caption:</span> ${escapeHtml(captionText)}</div>
+              <div style="font-size: 0.9rem; color: #38bdf8; font-weight: 600;">${escapeHtml(hashtagsText)}</div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap; align-items: center;">
+              <div id="reelPhaseTag" style="margin-right: auto; display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: #fbbf24; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3); border-radius: 20px; padding: 4px 12px;">
+                <i class="fa-solid fa-clock-rotate-left" style="font-size: 0.7rem;"></i> Awaiting Your Approval • Phase 1
+              </div>
+              <button onclick="approveReelWorkflow('${escapeSingleQuotes(plan.title || plan.topic || '')}')" style="background: linear-gradient(135deg, #10A37F, #059669); color: white; border: none; padding: 10px 22px; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: all 0.2s; box-shadow: 0 4px 12px rgba(16,163,127,0.35); outline: none;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                <i class="fa-solid fa-circle-check"></i> Approve &amp; Start Phase 2
+              </button>
+              <button onclick="sendFollowupText('Reel plan karo topic: ${escapeSingleQuotes(plan.topic || plan.title || '')}')" style="background-color: transparent; color: #94a3b8; border: 1px solid rgba(255,255,255,0.2); padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: all 0.2s; outline: none;" onmouseover="this.style.borderColor='rgba(255,255,255,0.5)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)'">
+                <i class="fa-solid fa-arrows-rotate"></i> Re-generate
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        parsedContent = sender === 'bot' ? marked.parse(rawText) : `<p>${escapeHtml(rawText)}</p>`;
+      }
 
       if (thinkingBlock) {
         const thinkHtml = `
@@ -1004,15 +1299,26 @@
       }
 
       let modelBadge = model ? `<div class="model-badge"><i class="fa-solid fa-bolt"></i> Powered by ${escapeHtml(model)}</div>` : '';
-      let imgTag = imageUrl ? `
-        <div style="position: relative; display: inline-block; max-width: 100%;">
-          <img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" />
-          <div style="position: absolute; bottom: 15px; right: 15px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 4px 10px 4px 4px; border-radius: 30px; backdrop-filter: blur(4px);">
-            <img src="/appicon.jpeg" style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);" />
-            <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Brahmand AI</span>
-          </div>
-        </div>
-      ` : '';
+      let imgTag = '';
+      if (imageUrl) {
+        if (imageUrl.endsWith('.mp4') || imageUrl.includes('video') || imageUrl.includes('.webm') || imageUrl.includes('previews/reels')) {
+          imgTag = `
+            <div style="position: relative; display: inline-block; max-width: 100%; margin-top: 12px;">
+              <video src="${escapeHtml(imageUrl)}" controls class="generated-img" style="max-width: 360px; border-radius: 12px; border: 1px solid #e5e5e5; box-shadow: 0 4px 12px rgba(0,0,0,0.08);"></video>
+            </div>
+          `;
+        } else {
+          imgTag = `
+            <div style="position: relative; display: inline-block; max-width: 100%;">
+              <img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" />
+              <div style="position: absolute; bottom: 15px; right: 15px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 4px 10px 4px 4px; border-radius: 30px; backdrop-filter: blur(4px);">
+                <img src="/appicon.jpeg" style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);" />
+                <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Brahmand AI</span>
+              </div>
+            </div>
+          `;
+        }
+      }
 
       // Unique ID for the message block to make it modifiable in real-time
       const msgContentId = sender === 'bot' ? 'msg_content_' + Math.random().toString(36).substring(2, 11) : '';

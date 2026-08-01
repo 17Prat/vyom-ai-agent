@@ -2,7 +2,7 @@
 # Flat config format (no _base_ inheritance)
 
 # Model settings
-optimizer_model: llama-3.1-8b-instant
+optimizer_model: llama-3.3-70b-versatile
 target_model: llama-3.1-8b-instant
 optimizer_backend: openai_chat
 target_backend: openai_chat
