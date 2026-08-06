@@ -236,6 +236,7 @@ const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मां�
 - Respond in natural, conversational Hinglish (or match the user's input language/script). Keep responses helpful and premium.
 - Before responding, perform deep step-by-step reasoning about the request.
 - Use tools autonomously when needed. Login is automatic. If asked to post, generate the media first, then pass the result to the posting tool.
+- **MESSAGING RULE**: When sending WhatsApp or Instagram messages, you MUST extract the exact recipient name or number specified by the user and pass it as the recipient. DO NOT hardcode any names or use mock values.
 - Cite sources intelligently using markdown links.
 - Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single \`\`\`html ... \`\`\` block.`;
 
@@ -565,7 +566,7 @@ async function executeToolCall(toolCall, writeStreamChunk) {
       case 'send_whatsapp_message':
         return await sendWhatsappMessage(args.recipient, args.message);
       case 'generate_video':
-        return await generatePollinationsVideo(args.prompt, args.duration || 4, args.model || 'veo', args.aspectRatio || '9:16', args.audio || false);
+        return await generatePollinationsVideo(args.prompt, args.duration || 12, args.model || 'nova-reel', args.aspectRatio || '9:16', args.audio || false);
       case 'generate_free_video_asset':
         return await generateFreeVideoAsset(args.prompt);
       case 'post_video_to_instagram':
@@ -1240,12 +1241,12 @@ app.post('/api/reels/approve', async (req, res) => {
       writeChunk({ type: 'status', text: '🎬 Dynamic Reel Engine: Generating unique scenes for your topic via AI...' });
       console.log(`🎬 Dynamic Reel Engine running for: "${title}"`);
       
-      // Use Dynamic Reel Engine — unique scenes + per-scene motion based on topic
+      // Use Dynamic Reel Engine — REAL AI motion clips (nova-reel), 3 clips x 6s = 18s
       const { videoPath } = await generateDynamicReel(plan, {
-        duration: 40,
+        duration: 18,
         language: 'hi',
         aspectRatio: '9:16',
-        numScenes: Math.max(4, (plan.scenes || []).length)
+        numScenes: 3
       });
       
       // Ensure target directory exists under public previews
@@ -1910,6 +1911,14 @@ CRITICAL CONSTRAINTS — DO NOT VIOLATE:
 
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 Brahmand Smart Decision Agent running on http://localhost:${PORT}`);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`\n❌ Port ${PORT} is already in use! Another instance of Brahmand AI Agent is already running.`);
+    console.log(`👉 Please close all other running terminal windows / node processes, or set PORT=3001 in your .env file.`);
+    process.exit(1);
+  } else {
+    console.error('Server error:', err.message);
+  }
 });

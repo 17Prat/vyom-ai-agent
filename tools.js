@@ -184,7 +184,7 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "generate_video",
-      description: "Generates a vertical AI video using Pollinations AI (VEO model) based on a description prompt. Returns the local path to the generated MP4 file.",
+      description: "Generates a vertical AI video with REAL motion using Pollinations AI (nova-reel model, supports 6-120s in multiples of 6) based on a description prompt. Returns the local path to the generated MP4 file.",
       parameters: {
         type: "object",
         properties: {
@@ -194,11 +194,11 @@ export const toolsDefinition = [
           },
           duration: {
             type: "integer",
-            description: "Duration of the video in seconds (default is 4).",
+            description: "Duration of the video in seconds (default is 12, must be a multiple of 6 for nova-reel).",
           },
           model: {
             type: "string",
-            description: "Video model to use (default is 'veo').",
+            description: "Video model to use (default is 'nova-reel', real AI motion video. Alternatives: 'wan', 'seedance-2.0', 'veo').",
           },
           aspectRatio: {
             type: "string",

@@ -28,7 +28,11 @@ export async function generateJson2Video(scenes, audioUrl, totalDuration) {
             const element = {
                 type: "image",
                 src: scene.image_url,
-                duration: duration
+                duration: duration,
+                position: "center",
+                width: "100%",
+                height: "100%",
+                fit: "cover"
             };
             
             // Map our motion types to official JSON2Video pan and zoom parameters
@@ -56,8 +60,10 @@ export async function generateJson2Video(scenes, audioUrl, totalDuration) {
 
     // Create the global movie payload structure
     const payload = {
-        resolution: "instagram-story", // 1080x1920 9:16 aspect ratio
-        quality: "high",
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        draft: false,
         scenes: formattedScenes
     };
 
@@ -73,6 +79,7 @@ export async function generateJson2Video(scenes, audioUrl, totalDuration) {
     }
 
     console.log("🚀 Sending POST request to JSON2Video API v2...");
+    console.log("📦 Payload Content:\n", JSON.stringify(payload, null, 2));
     
     const response = await fetch("https://api.json2video.com/v2/movies", {
         method: "POST",

@@ -254,48 +254,52 @@ export async function getInstagramProfileInfo(targetUsername) {
   const page = await b.browser.newPage();
   await page.setViewport({ width: 1366, height: 768 });
 
-  await page.goto(`https://www.instagram.com/${targetUsername}/`, { waitUntil: "networkidle2", timeout: 30000 });
-  await delay(3000);
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await delay(1500);
+  try {
+    await page.goto(`https://www.instagram.com/${targetUsername}/`, { waitUntil: "networkidle2", timeout: 30000 });
+    await delay(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await delay(1500);
 
-  const metaDesc = await page.evaluate(() => {
-    const m = document.querySelector('meta[property="og:description"]');
-    const m2 = document.querySelector('meta[name="description"]');
-    return { og: m?.content || null, name: m2?.content || null };
-  });
+    const metaDesc = await page.evaluate(() => {
+      const m = document.querySelector('meta[property="og:description"]');
+      const m2 = document.querySelector('meta[name="description"]');
+      return { og: m?.content || null, name: m2?.content || null };
+    });
 
-  const metaProfile = parseProfileMeta(metaDesc.og);
+    const metaProfile = parseProfileMeta(metaDesc.og);
 
-  let bioFromMeta = "";
-  if (metaDesc.name) {
-    const bioMatch = metaDesc.name.match(/on Instagram:\s*"(.+)"$/);
-    if (bioMatch) bioFromMeta = bioMatch[1].trim();
+    let bioFromMeta = "";
+    if (metaDesc.name) {
+      const bioMatch = metaDesc.name.match(/on Instagram:\s*"(.+)"$/);
+      if (bioMatch) bioFromMeta = bioMatch[1].trim();
+    }
+
+    const headerData = await page.evaluate(() => {
+      const header = document.querySelector("header");
+      if (!header) return null;
+      const text = header.innerText || "";
+      const postLinks = Array.from(document.querySelectorAll("article a")).map(a => ({
+        href: a.href,
+        type: a.href.includes("/reel/") ? "reel" : "post"
+      }));
+      return { headerText: text, postLinks: postLinks.slice(0, 12) };
+    });
+
+    const profile = headerData ? parseProfileHeader(headerData.headerText) : {};
+
+    return JSON.stringify({
+      username: profile.username || metaProfile?.username || targetUsername,
+      full_name: profile.full_name || metaProfile?.full_name || "",
+      biography: bioFromMeta || profile.biography || "No bio available",
+      follower_count: profile.follower_count || metaProfile?.follower_count || 0,
+      following_count: profile.following_count || metaProfile?.following_count || 0,
+      media_count: metaProfile?.media_count || 0,
+      is_private: headerData?.headerText?.includes("This account is private") || false,
+      latest_posts: (headerData?.postLinks || []).slice(0, 6).map(l => l.href)
+    }, null, 2);
+  } finally {
+    await page.close().catch(() => {});
   }
-
-  const headerData = await page.evaluate(() => {
-    const header = document.querySelector("header");
-    if (!header) return null;
-    const text = header.innerText || "";
-    const postLinks = Array.from(document.querySelectorAll("article a")).map(a => ({
-      href: a.href,
-      type: a.href.includes("/reel/") ? "reel" : "post"
-    }));
-    return { headerText: text, postLinks: postLinks.slice(0, 12) };
-  });
-
-  const profile = headerData ? parseProfileHeader(headerData.headerText) : {};
-
-  return JSON.stringify({
-    username: profile.username || metaProfile?.username || targetUsername,
-    full_name: profile.full_name || metaProfile?.full_name || "",
-    biography: bioFromMeta || profile.biography || "No bio available",
-    follower_count: profile.follower_count || metaProfile?.follower_count || 0,
-    following_count: profile.following_count || metaProfile?.following_count || 0,
-    media_count: metaProfile?.media_count || 0,
-    is_private: headerData?.headerText?.includes("This account is private") || false,
-    latest_posts: (headerData?.postLinks || []).slice(0, 6).map(l => l.href)
-  }, null, 2);
 }
 
 export async function getInstagramRecentMedia(targetUsername) {
@@ -303,51 +307,55 @@ export async function getInstagramRecentMedia(targetUsername) {
   const page = await b.browser.newPage();
   await page.setViewport({ width: 1366, height: 768 });
 
-  await page.goto(`https://www.instagram.com/${targetUsername}/`, { waitUntil: "networkidle2", timeout: 30000 });
-  await delay(3000);
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await delay(1500);
+  try {
+    await page.goto(`https://www.instagram.com/${targetUsername}/`, { waitUntil: "networkidle2", timeout: 30000 });
+    await delay(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await delay(1500);
 
-  const postLinks = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll("article a")).slice(0, 6).map(a => ({
-      href: a.href,
-      type: a.href.includes("/reel/") ? "reel" : "post"
-    }));
-  });
+    const postLinks = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("article a")).slice(0, 6).map(a => ({
+        href: a.href,
+        type: a.href.includes("/reel/") ? "reel" : "post"
+      }));
+    });
 
-  const posts = [];
-  for (const link of postLinks) {
-    try {
-      await page.goto(link.href, { waitUntil: "networkidle2", timeout: 20000 });
-      await delay(2000);
+    const posts = [];
+    for (const link of postLinks) {
+      try {
+        await page.goto(link.href, { waitUntil: "networkidle2", timeout: 20000 });
+        await delay(2000);
 
-      const postData = await page.evaluate(() => {
-        const m = document.querySelector('meta[property="og:description"]');
-        const image = document.querySelector('meta[property="og:image"]');
-        const video = document.querySelector('meta[property="og:video"]');
-        return {
-          ogDesc: m?.content || null,
-          ogImage: image?.content || null,
-          ogVideo: video?.content || null,
-        };
-      });
+        const postData = await page.evaluate(() => {
+          const m = document.querySelector('meta[property="og:description"]');
+          const image = document.querySelector('meta[property="og:image"]');
+          const video = document.querySelector('meta[property="og:video"]');
+          return {
+            ogDesc: m?.content || null,
+            ogImage: image?.content || null,
+            ogVideo: video?.content || null,
+          };
+        });
 
-      const meta = parsePostMeta(postData.ogDesc);
-      posts.push({
-        url: link.href,
-        type: link.type,
-        caption: meta?.caption || "",
-        likes: meta?.likes || 0,
-        comments: meta?.comments || 0,
-        date: meta?.date || "",
-        thumbnail: postData.ogImage || postData.ogVideo || ""
-      });
-    } catch (e) {
-      posts.push({ url: link.href, type: link.type, error: e.message?.substring(0, 100) });
+        const meta = parsePostMeta(postData.ogDesc);
+        posts.push({
+          url: link.href,
+          type: link.type,
+          caption: meta?.caption || "",
+          likes: meta?.likes || 0,
+          comments: meta?.comments || 0,
+          date: meta?.date || "",
+          thumbnail: postData.ogImage || postData.ogVideo || ""
+        });
+      } catch (e) {
+        posts.push({ url: link.href, type: link.type, error: e.message?.substring(0, 100) });
+      }
     }
-  }
 
-  return JSON.stringify(posts, null, 2);
+    return JSON.stringify(posts, null, 2);
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 // ============================================================

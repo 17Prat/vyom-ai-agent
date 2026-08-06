@@ -10,9 +10,14 @@ import path from 'path';
 import fetch from 'node-fetch';
 import { askLLM } from './llmService.js';
 import { generateNarration } from './ttsService.js';
-import { assembleReel } from './videoAssembler.js';
+import { generatePollinationsVideo } from './pollinationsVideoService.js';
+import { assembleReel, assembleVideoClips } from './videoAssembler.js';
 
 const VALID_MOTIONS = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'glide', 'static'];
+
+// nova-reel only accepts multiples of 6 seconds per clip (6s minimum)
+const AI_CLIP_DURATION = 6;
+const MAX_AI_CLIPS = 3; // 3 x 6s = 18s reel (fits 10-20s target)
 
 // ─── Motion fallback heuristic (used if LLM forgets to specify) ──────────────
 function pickMotionFromText(text) {
@@ -254,6 +259,46 @@ async function generateSceneImages(scenePlan) {
     return imagePaths;
 }
 
+// ─── Generate REAL AI motion video clips per scene (nova-reel, not slideshow) ─
+async function generateSceneVideoClips(scenePlan) {
+    const outputDir = path.join(process.cwd(), 'temp', 'ai_clips');
+    await fs.ensureDir(outputDir);
+
+    // Clear old clips
+    const existing = await fs.readdir(outputDir).catch(() => []);
+    for (const f of existing) {
+        await fs.remove(path.join(outputDir, f)).catch(() => {});
+    }
+
+    const clipPaths = [];
+
+    for (let i = 0; i < scenePlan.length; i++) {
+        const scene = scenePlan[i];
+        // Build a clean, short, URL-safe prompt
+        const rawPrompt = (scene.visual_prompt || `Cinematic scene ${i+1}`);
+        const cleanedPrompt = rawPrompt
+            .replace(/[—–]/g, ',')           // em/en dash → comma
+            .replace(/["'`]/g, '')            // remove quotes
+            .replace(/\s+/g, ' ')             // normalize spaces
+            .trim();
+        // Keep total prompt under 180 chars to avoid URL length issues and timeouts
+        const trimmedPrompt = cleanedPrompt.length > 180 ? cleanedPrompt.substring(0, 177) + '...' : cleanedPrompt;
+
+        console.log(`  🎬 Scene ${i+1}/${scenePlan.length}: Generating REAL AI motion clip (${AI_CLIP_DURATION}s, nova-reel)...`);
+
+        // ignoreFallback=true → throw if AI video gen fails (no silent slideshow substitution)
+        const clipPath = await generatePollinationsVideo(trimmedPrompt, AI_CLIP_DURATION, 'nova-reel', '9:16', false, true);
+        const finalPath = path.join(outputDir, `clip_${String(i+1).padStart(3, '0')}.mp4`);
+        await fs.copy(clipPath, finalPath).catch(async () => {
+            await fs.move(clipPath, finalPath).catch(() => {});
+        });
+        clipPaths.push(finalPath);
+        console.log(`  ✅ Clip ${i+1} saved: ${finalPath}`);
+    }
+
+    return clipPaths;
+}
+
 // ─── Main export: generateDynamicReel ───────────────────────────────────────
 export async function generateDynamicReel(plan, options = {}) {
     const {
@@ -284,9 +329,18 @@ export async function generateDynamicReel(plan, options = {}) {
     console.log(`✅ ${scenePlan.length} unique scenes planned:`);
     scenePlan.forEach((s, i) => console.log(`  Scene ${i+1}: [${s.motion_hint || 'glide'}] ${s.description || s.narration}`));
 
-    // STEP 2: Generate unique images per scene from LLM-crafted prompts
-    console.log('\n🖼️  Step 2: Generating unique script-specific images...');
-    const sceneImages = await generateSceneImages(scenePlan);
+    // STEP 2: Generate REAL AI motion video clips per scene (falls back to image slideshow if AI video fails)
+    console.log('\n🎬 Step 2: Generating REAL AI motion video clips per scene...');
+    let sceneClips = [];
+    let sceneImages = null;
+    try {
+        const clipPlan = scenePlan.slice(0, MAX_AI_CLIPS);
+        sceneClips = await generateSceneVideoClips(clipPlan);
+        console.log(`✅ ${sceneClips.length} real AI motion clips generated (${sceneClips.length * AI_CLIP_DURATION}s total)`);
+    } catch (clipErr) {
+        console.warn(`⚠️ Real AI video generation failed (${clipErr.message}). Falling back to image slideshow...`);
+        sceneImages = await generateSceneImages(scenePlan);
+    }
 
     // STEP 3: Validate motion types (ensure all are valid)
     const motionTypes = scenePlan.map(s => {
@@ -322,53 +376,34 @@ export async function generateDynamicReel(plan, options = {}) {
         }
     }
 
-    // STEP 5: Assemble the reel using JSON2Video API
-    console.log(`\n🎬 Step 4: Assembling reel via JSON2Video API...`);
-    const { generateJson2Video } = await import('./klingService.js');
-    
-    // Format scenes with Pollinations Flux image links to send to API
-    const apiScenes = scenePlan.map((s, idx) => {
-        // Construct the Pollinations URL for the generated image
-        const rawPrompt = (s.visual_prompt || `Cinematic scene ${idx+1}`);
-        const cleanedPrompt = rawPrompt
-            .replace(/[—–]/g, ',')
-            .replace(/["'`]/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        const trimmedPrompt = cleanedPrompt.length > 180 ? cleanedPrompt.substring(0, 177) + '...' : cleanedPrompt;
-        const cleanPrompt = encodeURIComponent(trimmedPrompt);
-        
-        // Use a consistent seeded image link so JSON2Video can download it
-        const seed = 123456 + idx;
-        const apiKey = process.env.POLLINATIONS_API_KEY;
-        let imageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1080&height=1920&model=flux&seed=${seed}&nologo=true&enhance=true`;
-        if (apiKey) {
-            imageUrl += `&key=${apiKey}`;
-        }
-        
-        return {
-            duration_seconds: parseFloat((compileDuration / scenePlan.length).toFixed(2)),
-            image_url: imageUrl,
-            motion_hint: motionTypes[idx] || 'glide'
-        };
-    });
-
+    // STEP 5: Assemble the reel — real AI clips concatenated, or Ken Burns fallback
     let videoPath = null;
     try {
-        const renderUrl = await generateJson2Video(apiScenes, audioPath, compileDuration);
-        
-        // Download the final rendered video to preview locally
-        const fetchRes = await fetch(renderUrl);
-        const videoBuffer = Buffer.from(await fetchRes.arrayBuffer());
-        
-        const outputDir = path.join(process.cwd(), 'temp', 'output');
-        await fs.ensureDir(outputDir);
-        videoPath = path.join(outputDir, `json2video_reel_${Date.now()}.mp4`);
-        await fs.writeFile(videoPath, videoBuffer);
-        
-        console.log(`\n✅ Dynamic Reel compiled via JSON2Video & saved locally → ${videoPath}`);
+        if (sceneClips.length > 0) {
+            console.log(`\n🎬 Step 4: Concatenating ${sceneClips.length} real AI motion clips + narration via FFmpeg...`);
+            const totalDuration = sceneClips.length * AI_CLIP_DURATION;
+            videoPath = await assembleVideoClips({
+                clips: sceneClips,
+                audio: audioPath,
+                totalDuration: totalDuration,
+                aspectRatio: aspectRatio
+            });
+            console.log(`\n✅ Dynamic Reel compiled (REAL AI motion) & saved → ${videoPath}`);
+        } else {
+            console.log(`\n🎬 Step 4: Assembling reel locally via FFmpeg (Ken Burns fallback)...`);
+            const { assembleReel: assembleReelFn } = await import('./videoAssembler.js');
+            videoPath = await assembleReelFn({
+                images: sceneImages,
+                audio: audioPath,
+                duration: compileDuration,
+                aspectRatio: aspectRatio,
+                motionType: 'glide',
+                motionPlan: motionTypes
+            });
+            console.log(`\n✅ Fallback reel compiled via FFmpeg & saved → ${videoPath}`);
+        }
     } catch (renderErr) {
-        console.error("❌ JSON2Video rendering failed:", renderErr.message);
+        console.error("❌ FFmpeg reel assembly failed:", renderErr.message);
         throw renderErr;
     }
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -378,6 +413,7 @@ export async function generateDynamicReel(plan, options = {}) {
         audioPath,
         scenePlan,
         sceneImages,
+        sceneClips,
         motionTypes,
         scriptType: detectScriptType(buildScriptContext(plan))
     };

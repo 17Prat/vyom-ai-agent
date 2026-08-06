@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brahmand AI Voice Agent Web Simulator</title>
+    <style>
+        body {
+            font-family: 'Outfit', 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f0c1b, #201335);
+            color: #f1ecf9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        h1 {
+            color: #d67cff;
+            margin-bottom: 5px;
+        }
+        p.subtitle {
+            color: #a594c3;
+            margin-top: 0;
+            margin-bottom: 30px;
+        }
+        .mic-button {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #aa33ff, #8811ee);
+            border: none;
+            color: white;
+            font-size: 32px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(170, 51, 255, 0.4);
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(170, 51, 255, 0.7);
+        }
+        .mic-button.active {
+            animation: pulse 1.5s infinite;
+            background: radial-gradient(circle, #ff3366, #cc1144);
+            box-shadow: 0 0 30px rgba(255, 51, 102, 0.7);
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .status {
+            margin-top: 25px;
+            font-size: 18px;
+            color: #d3c4ec;
+        }
+        .response-box {
+            margin-top: 30px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            min-height: 80px;
+            max-height: 150px;
+            overflow-y: auto;
+            text-align: left;
+            border-left: 4px solid #aa33ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕉️ Brahmand AI</h1>
+        <p class="subtitle">Voice Agent Web Simulator</p>
+        
+        <button id="micBtn" class="mic-button">🎙️</button>
+        
+        <div id="status" class="status">Click the microphone to start talking</div>
+        
+        <div class="response-box" id="responseBox">
+            <span style="color:#8f7dae;">AI Response will appear here...</span>
+        </div>
+    </div>
+
+    <script>
+        const micBtn = document.getElementById('micBtn');
+        const statusEl = document.getElementById('status');
+        const responseBox = document.getElementById('responseBox');
+        
+        let isRecording = false;
+        let recognition = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'hi-IN'; // Set to Hindi/Hinglish
+
+            recognition.onstart = () => {
+                statusEl.textContent = "Listening... Speak now!";
+                micBtn.classList.add('active');
+            };
+
+            recognition.onresult = async (event) => {
+                const speechToText = event.results[0][0].transcript;
+                statusEl.textContent = `You said: "${speechToText}"`;
+                
+                // Simulate sending text to backend server or LLM service locally
+                responseBox.innerHTML = `<i>Thinking response...</i>`;
+                
+                try {
+                    // Simulating AI assistant output voice locally with SpeechSynthesis
+                    const mockReplies = [
+                        "Namaskar! Main Brahmand AI Assistant bol raha hoon. Brahmand App ke features explain karu?",
+                        "Hamare App me Live Darshan, Jaap Counter aur AI Guru jaise features hain.",
+                        "Bilkul free hai! Kya main aapko download link abhi WhatsApp par bhej du?",
+                        "Maine link bhej diya hai, check kar lijiye. Har Har Mahadev!"
+                    ];
+                    
+                    const randomReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+                    responseBox.innerHTML = `<strong>Assistant:</strong> ${randomReply}`;
+                    
+                    const utterance = new SpeechSynthesisUtterance(randomReply);
+                    utterance.lang = 'hi-IN';
+                    window.speechSynthesis.speak(utterance);
+                    
+                } catch (e) {
+                    responseBox.textContent = "Error sending message: " + e.message;
+                }
+            };
+
+            recognition.onerror = (event) => {
+                statusEl.textContent = "Error occurred in recognition: " + event.error;
+                stopRecording();
+            };
+
+            recognition.onend = () => {
+                stopRecording();
+            };
+        } else {
+            statusEl.textContent = "Speech recognition is not supported in this browser.";
+            micBtn.disabled = true;
+        }
+
+        function startRecording() {
+            isRecording = true;
+            recognition.start();
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            micBtn.classList.remove('active');
+            statusEl.textContent = "Click the microphone to start talking";
+        }
+
+        micBtn.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                recognition.stop();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -102,6 +102,88 @@ export async function assembleReel({ images, audio = null, duration, aspectRatio
 }
 
 /**
+ * Concatenate real AI video clips into one reel and mux narration audio.
+ * Used for the realistic (non-slideshow) reel pipeline.
+ */
+export async function assembleVideoClips({ clips, audio = null, totalDuration, aspectRatio = '9:16' }) {
+    const tempDir = path.join(process.cwd(), 'temp');
+    const outputDir = path.join(tempDir, 'output');
+    await fs.ensureDir(outputDir);
+    const outputPath = path.join(outputDir, `ai_reel_${Date.now()}.mp4`);
+
+    if (!clips || clips.length === 0) {
+        throw new Error('No video clips provided to assembleVideoClips');
+    }
+
+    // Filter to existing clips only
+    const existingClips = clips.filter(c => fs.existsSync(c));
+    if (existingClips.length === 0) {
+        throw new Error('None of the provided video clips exist on disk');
+    }
+
+    return new Promise(async (resolve, reject) => {
+        let ffmpeg;
+        let ffmpegStatic;
+        try {
+            ffmpeg = (await import('fluent-ffmpeg')).default;
+            ffmpegStatic = (await import('ffmpeg-static')).default;
+            ffmpeg.setFfmpegPath(ffmpegStatic);
+        } catch (err) {
+            return reject(new Error("Missing dependencies: 'fluent-ffmpeg' or 'ffmpeg-static'. Please run 'npm install fluent-ffmpeg ffmpeg-static' in your terminal."));
+        }
+
+        const perClipDuration = parseFloat((totalDuration / existingClips.length).toFixed(2));
+
+        let command = ffmpeg();
+        existingClips.forEach((clip) => {
+            command = command.input(clip).inputOptions(['-t', String(perClipDuration)]);
+        });
+
+        const hasAudio = audio && fs.existsSync(audio);
+        if (hasAudio) {
+            command = command.input(audio);
+        }
+
+        // Scale every clip to uniform 1080x1920, normalize fps, then concat
+        const filterParts = existingClips.map((_, i) => {
+            return `[${i}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[vc${i}]`;
+        });
+        const concatInputs = existingClips.map((_, i) => `[vc${i}]`).join('');
+        const concatFilter = `${concatInputs}concat=n=${existingClips.length}:v=1:a=0[outv]`;
+
+        const audioMap = hasAudio ? `-map ${existingClips.length}:a` : '';
+        const outputOptions = [
+            '-map [outv]',
+            audioMap,
+            '-c:v libx264',
+            '-preset medium',
+            '-crf 23',
+            '-pix_fmt yuv420p',
+            '-movflags +faststart',
+            `-t ${totalDuration}`,
+            '-y'
+        ].filter(Boolean);
+
+        command
+            .complexFilter(filterParts.join(';') + ';' + concatFilter)
+            .outputOptions(outputOptions)
+            .output(outputPath)
+            .on('start', (cmdline) => {
+                console.log(`🎬 FFmpeg clip concat started: ${cmdline}`);
+            })
+            .on('end', () => {
+                console.log(`✅ AI reel (real motion clips) compiled: ${outputPath}`);
+                resolve(outputPath);
+            })
+            .on('error', (err) => {
+                console.error('❌ FFmpeg clip concat error:', err.message);
+                reject(err);
+            })
+            .run();
+    });
+}
+
+/**
  * Create FFmpeg filter with motion effects
  * Motion types: zoom-in, zoom-out, pan-left, pan-right, glide, static
  */
