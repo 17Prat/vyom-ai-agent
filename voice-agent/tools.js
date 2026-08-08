@@ -15,7 +15,7 @@ export const voiceAgentTools = {
         },
         execute: async ({ phone, channel = "whatsapp" }) => {
             console.log(`📞 [Voice Agent Tool] Sending download link to ${phone} via ${channel}`);
-            const message = "Namaskar! Here is your download link for the Brahmand App: https://brahmand.app/download. Explore Live Darshan, Jaap Counter, and AI Guru. Har Har Mahadev!";
+            const message = "Namaskar! Here are the download links for the Brahmand App:\n\n🤖 Android (Play Store): https://play.google.com/store/apps/details?id=com.brahmand.app\n\n🍎 iOS (App Store): https://apps.apple.com/app/brahmand-app/id6765467224\n\nExplore Live Darshan, Jaap Counter, and AI Guru. Har Har Mahadev! 🚩";
             
             if (channel === "whatsapp") {
                 try {

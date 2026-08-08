@@ -1,11 +1,39 @@
 import fetch from 'node-fetch';
+import { maxunSearcher } from './maxunService.js';
 
 export async function searchWeb(query) {
     try {
         console.log("🔍 Searching web for:", query);
-        let snippets = [];
+        console.log("DEBUG: MAXUN_API_KEY is:", process.env.MAXUN_API_KEY);
 
-        // Simple Google scrape strategy
+        // === STRATEGY 1: Maxun Search Robot (Primary) ===
+        if (process.env.MAXUN_API_KEY && process.env.MAXUN_API_KEY !== 'maxun_api_key_here') {
+            try {
+                console.log("🕷️ Running Maxun Search Robot...");
+                const robot = await maxunSearcher.create(`Search-${Date.now()}`, {
+                    query: query,
+                    mode: 'discover',
+                    limit: 5
+                });
+
+                const runResult = await robot.run();
+                if (runResult && runResult.results && runResult.results.length > 0) {
+                    console.log(`✅ Maxun Search returned ${runResult.results.length} results.`);
+                    const snippets = runResult.results.map(item => {
+                        const title = item.title || item.name || '';
+                        const desc = item.description || item.snippet || '';
+                        const url = item.url || '';
+                        return `${title}\n${desc}\n(Source: ${url})`;
+                    });
+                    return snippets.join("\n\n");
+                }
+            } catch (maxunErr) {
+                console.warn("⚠️ Maxun Search failed, falling back to Google scrape...", maxunErr.message || maxunErr);
+            }
+        }
+
+        // === STRATEGY 2: Local Google Scrape Fallback ===
+        let snippets = [];
         try {
             const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
             const res = await fetch(googleUrl, {
@@ -31,7 +59,7 @@ export async function searchWeb(query) {
                      while ((match = regex2.exec(html)) !== null && snippets.length < 5) {
                         const cleanText = match[1].replace(/<[^>]+>/g, '').trim();
                         if (cleanText && cleanText.length > 20) snippets.push(cleanText);
-                    }
+                     }
                 }
             }
         } catch(e) {

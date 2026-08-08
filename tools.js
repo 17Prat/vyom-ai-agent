@@ -267,5 +267,27 @@ export const toolsDefinition = [
         required: ["prompt"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "manage_agent_reach",
+      description: "Controls Agent Reach environment installs, doctor checks, or channel status updates.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["doctor", "install_channel"],
+            description: "The action to perform. 'doctor' runs diagnostic check, 'install_channel' installs optional packages/channels."
+          },
+          channels: {
+            type: "string",
+            description: "Comma-separated list of channels to install (e.g. 'bilibili,opencli' or 'all'). Required only when action is 'install_channel'."
+          }
+        },
+        required: ["action"]
+      }
+    }
   }
 ];

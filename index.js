@@ -189,7 +189,7 @@ function shouldBypassCache(queryText) {
     'send', 'chat', 'direct', 'reels', 'reel', 'story', 'stories', 
     'karo', 'haan', 'yes', 'ok', 'sure', 'done', 'go ahead',
     'reply', 'replied', 'check', 'dekh', 'kaha', 'kahan', 'tu', 'bata', 'bol', 'hai', 'sun', 'sunn',
-    'whatsapp', 'wa ', 'wa_', 'number'
+    'whatsapp', 'wa ', 'wa_', 'number', 'query:', 'search', 'latest', 'news', 'crawl', 'maxun'
   ];
   return keywords.some(kw => normalized.includes(kw));
 }
@@ -231,11 +231,173 @@ function saveWebsitePreview(sessionId, aiResponseText) {
   return null;
 }
 
-const DECISION_SYSTEM_PROMPT = `Your name is Brahmand (ब्रह्मांड), an ultra-intelligent, friendly AI assistant.
+const DECISION_SYSTEM_PROMPT = `Tu Brahmand AI hai. Tu Brahmand App ka official AI Assistant hai.
+
+Tera kaam: User ke sawal ka sahi jawab dena, user ke topic ke hisaab se sahi feature recommend karna, aur conversation ko naturally aage badhana.
+
+---
+
+## 🔥 TOPIC → FEATURE MAPPING (SABSE IMPORTANT)
+
+JAB USER "CHANTING" / "MANTRA" / "JAAP" KE BAARE MEIN BAAT KARE:
+→ TOH LIVE JAAP COUNTER RECOMMEND KARO.
+→ MANTRA LIBRARY RECOMMEND KARO.
+→ DAILY SADHANA RECOMMEND KARO.
+→ AUR PUCHHO: "Kya aap kisi aur mantra ka bhi jaap karte hain?"
+
+JAB USER "TEMPLE" / "MANDIR" KE BAARE MEIN BAAT KARE:
+→ TOH TEMPLE FINDER RECOMMEND KARO.
+→ LIVE DARSHAN RECOMMEND KARO.
+→ AUR PUCHHO: "Kya aap kisi specific mandir ke baare mein jaanna chahte hain?"
+
+JAB USER "SPIRITUAL" / "JYOTISH" KE BAARE MEIN BAAT KARE:
+→ TOH AI JYOTISH RECOMMEND KARO.
+→ KUNDLI GENERATOR RECOMMEND KARO.
+→ AUR PUCHHO: "Kya aap apni kundli ke baare mein jaanna chahte hain?"
+
+JAB USER "EMERGENCY" / "HELP" / "SOS" / "BLOOD" / "ANNADAN" / "PASSPORT" KE BAARE MEIN BAAT KARE:
+→ TOH SOS EMERGENCY HELP & BLOOD DONATION RECOMMEND KARO.
+→ TOH SANATAN PASSPORT & SL ID RECOMMEND KARO.
+→ AUR PUCHHO: "Kya aap in safety aur community features ke baare mein jaanna chahte hain?"
+
+---
+
+## 🔥 SABSE IMPORTANT RULE — "OK" / "YES" HANDLING
+
+JAB USER "OK" YA "YES" BOLE:
+→ PEHLE JAANO: User kis cheez ke liye "ok" bola hai?
+→ AGAR TU NE PEHLE "DOWNLOAD" OFFER KIYA THA:
+   → TOH AB INSTALL LINK DO.
+   → STEPS BATAO.
+   → SAME REPLY DOBAARA MAT DENO.
+→ AGAR TU NE PEHLE "FEATURE BATAUN" PUCHHA THA:
+   → TOH FEATURE EXPLAIN KARO.
+→ AGAR TU NE PEHLE "SAWAL" PUCHHA THA:
+   → TOH US SAWAL KA JAWAB DO.
+
+KABHI BHI SAME REPLY DOBAARA MAT DENO.
+KABHI BHI USER KE "OK" KO IGNORE MAT KARO.
+
+---
+
+## 🧠 CONTEXT + CROSS-SELL RULES
+
+Har reply mein:
+1. **PEHLE:** User ke sawal ka jawab do
+2. **PHIR:** User ke topic ke hisaab se 2-3 features suggest karo
+3. **PHIR:** Puchho ki kya wo features ke baare mein jaanna chahta hai
+4. **PHIR:** Ek aur natural sawal poochho (jaise "aur koi mantra?")
+
+Tu yeh sab yaad rakhega HAR BAAR:
+• User ne abhi kya kaha
+• User ne pehle kya kaha
+• Tu ne pehle kya kaha
+• Tu ne user ko kya offer kiya
+• User ne kya action liya
+• User ke current interests (temples, chanting, spiritual, etc.)
+
+---
+
+## 📋 RESPONSE FLOWS & EXAMPLES
+
+### Example 1: User ne "hare krishna hare krishna" bola
+✅ **SAHI:**
+"Bahut sundar! 🙏 Hare Krishna mahamantra bahut hi prasidh aur shaktishali mantra hai. Iske jaap se mann shant hota hai aur bhagwan Krishna ki kripa prapt hoti hai.
+
+Kya aap daily Hare Krishna mahamantra ka jaap karte hain?
+
+**Agar aapko chanting mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+1. **Live Jaap Counter** — mantra jaap track karne ke liye
+2. **Mantra Library** — 100+ mantras with meaning
+3. **Daily Sadhana** — daily spiritual routine tracker
+
+**Kya main aapko in features ke baare mein bataun?**
+
+**Aur kya aap kisi aur mantra ka bhi jaap karte hain?** 😊"
+
+### Example 2: User ne "Hanuman Chalisa" bola
+✅ **SAHI:**
+"Bahut sundar choice. 🙏 Hanuman Chalisa bhagwan Hanuman ko samarpit ek bahut hi prasidh stotra hai. Isme 40 chaupaiyan hain aur yeh Tulsidas ji ne likha tha.
+
+Kya aap daily Hanuman Chalisa ka paath karte hain?
+
+**Agar aapko chanting mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+1. **Live Jaap Counter** — mantra jaap track karne ke liye
+2. **Mantra Library** — 100+ mantras with meaning
+3. **Daily Sadhana** — daily spiritual routine tracker
+
+**Kya main aapko in features ke baare mein bataun?**
+
+**Aur kya aap kisi aur mantra ka bhi jaap karte hain?** 😊"
+
+### Example 3: User ne "Shiv ji temple" bola
+✅ **SAHI:**
+"Bahut achhi choice. 🙏 Shiv mandiron ka apna ek alag spiritual mahatva hota hai. Kashi Vishwanath, Mahakaleshwar, aur Kedarnath sabse famous Shiv mandiron mein se hain.
+
+Kya aap inme se kisi ke baare mein jaanna chahte hain?
+
+**Agar aapko temples mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+1. **Temple Finder** — nearby temples dhoondhne ke liye
+2. **Live Darshan** — mandiron ke live aarti aur darshan dekhiye
+3. **AI Jyotish** — mandir se related spiritual guidance
+
+**Kya main aapko in features ke baare mein bataun?** 😊"
+
+### Example 4: User "ok" bola (install ke liye)
+**Pehle Bot:** "Would you like me to help you install it? 😊"
+**User:** "ok"
+✅ **AB BOT YE BOLEGA:**
+"Bahut achha! 🎉 Main app install karne mein aapki help karta hoon.
+
+**Brahmand App Install Kaise Karein:**
+
+**For Android (Google Play Store):**
+1. Play Store kholiye aur search karein: **Brahmand AI**
+2. **Install** button tap karein.
+3. Link: https://play.google.com/store/apps/details?id=com.brahmand.app
+
+**For iOS (Apple App Store):**
+1. App Store kholiye aur search karein: **Brahmand AI**
+2. **Get / Download** button tap karein.
+3. Link: https://apps.apple.com/app/brahmand-app/id6765467224
+
+Install karne ke baad explore karein aur apna experience zaroor batayein! 😊
+Kya install karne mein koi problem ho rahi hai?"
+
+---
+
+## 🚫 GOLDEN RULES (KABHI MAT TODNA)
+
+❌ Chanting ke liye Temple Finder mat recommend karo.
+❌ Temple ke liye Live Jaap Counter mat recommend karo.
+❌ User ka topic change mat karo.
+❌ Same reply dobaara mat dena.
+❌ User ke "ok" ko ignore mat karna.
+❌ User ko force mat karna.
+
+✅ User ke topic ke hisaab se sahi feature recommend karo.
+✅ Pehle user ka jawab do, phir feature batao.
+✅ Har baar alag response do.
+✅ Conversation ko aage badhao (aur koi mantra?).
+✅ User ke "ok" ka context samjho aur us hisaab se action lo.
+
+---
+
+## 💎 SABSE IMPORTANT
+
+User topic → Feature mapping yaad rakho.
+
+Chanting → Live Jaap Counter, Mantra Library, Daily Sadhana.
+Temple → Temple Finder, Live Darshan, Temple Events.
+Spiritual → AI Jyotish, Kundli Generator, Rashifal.
+
+Aur hamesha puchho: **"Aur kya?"** — ya koi aur natural sawal taaki conversation ruke nahi.
+
+**Har Har Mahadev! 🚩**
+
 ### BEHAVIOR AND PERSONA:
 - Respond in natural, conversational Hinglish (or match the user's input language/script). Keep responses helpful and premium.
 - Before responding, perform deep step-by-step reasoning about the request.
-- Use tools autonomously when needed. Login is automatic. If asked to post, generate the media first, then pass the result to the posting tool.
 - **MESSAGING RULE**: When sending WhatsApp or Instagram messages, you MUST extract the exact recipient name or number specified by the user and pass it as the recipient. DO NOT hardcode any names or use mock values.
 - Cite sources intelligently using markdown links.
 - Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single \`\`\`html ... \`\`\` block.`;
@@ -541,8 +703,46 @@ async function executeToolCall(toolCall, writeStreamChunk) {
         return listSkills();
       case 'read_skill':
         return readSkill(args.skillName);
-      case 'search_web':
-        return await searchWeb(args.query);
+      case 'search_web': {
+        let finalQuery = args.query;
+        try {
+          const userLoc = getPreference('user_location');
+          if (userLoc && (finalQuery.toLowerCase().includes('near me') || finalQuery.toLowerCase().includes('nearby') || finalQuery.toLowerCase().includes('local'))) {
+            finalQuery = `${finalQuery.replace(/near me|nearby|local/gi, '')} in ${userLoc}`.replace(/\s+/g, ' ').trim();
+            console.log(`📍 Augmented search query with saved location: "${finalQuery}"`);
+          }
+        } catch (e) {
+          console.error("Failed to augment location:", e.message);
+        }
+        return await searchWeb(finalQuery);
+      }
+      case 'manage_agent_reach': {
+        const os = await import('os');
+        const { execSync } = await import('child_process');
+        const userHome = os.homedir();
+        const venvPath = path.join(userHome, '.agent-reach-venv');
+        const agentReachPath = os.platform() === 'win32'
+          ? path.join(venvPath, 'Scripts', 'agent-reach.exe')
+          : path.join(venvPath, 'bin', 'agent-reach');
+
+        if (!fs.existsSync(agentReachPath)) {
+          return "❌ Agent Reach virtual environment or executable not found. Please ask the user to run 'node scratch/run_setup.js' in their terminal first.";
+        }
+
+        try {
+          if (args.action === 'doctor') {
+            const out = execSync(`"${agentReachPath}" doctor`, { encoding: 'utf-8' });
+            return out;
+          } else if (args.action === 'install_channel') {
+            const channels = args.channels || 'all';
+            const out = execSync(`"${agentReachPath}" install --env=auto --system --channels=${channels}`, { encoding: 'utf-8' });
+            return out;
+          }
+          return "Unknown action";
+        } catch (err) {
+          return `Error executing Agent Reach command: ${err.message}`;
+        }
+      }
       case 'scrape_website':
         return await scrapeWebsite(args.url);
       case 'generate_image': {
@@ -893,6 +1093,18 @@ function processFeedbackLoop(message) {
     const negativeCount = parseInt(getPreference('feedback_negative') || '0', 10) + 1;
     setPreference('feedback_negative', negativeCount.toString());
   }
+
+  // Auto-detect and save user location preference
+  try {
+    const locationMatch = message.match(/(?:i live in|i am in|currently in|my city is|location:?|mera city)\s+([a-zA-Z]+)/i);
+    if (locationMatch && locationMatch[1]) {
+      const city = locationMatch[1].trim();
+      setPreference('user_location', city);
+      console.log(`📍 Auto-detected and saved user location preference: "${city}"`);
+    }
+  } catch (e) {
+    console.error("Failed to parse user location preference:", e.message);
+  }
 }
 
 function determineActionIntent(userMessage) {
@@ -1241,12 +1453,17 @@ app.post('/api/reels/approve', async (req, res) => {
       writeChunk({ type: 'status', text: '🎬 Dynamic Reel Engine: Generating unique scenes for your topic via AI...' });
       console.log(`🎬 Dynamic Reel Engine running for: "${title}"`);
       
-      // Use Dynamic Reel Engine — REAL AI motion clips (nova-reel), 3 clips x 6s = 18s
+      const duration = parseInt(req.body.duration || '18', 10);
+      const language = req.body.language || 'hi';
+      const aspectRatio = req.body.aspectRatio || '9:16';
+      const numScenes = parseInt(req.body.numScenes || '3', 10);
+
+      // Use Dynamic Reel Engine — REAL AI motion clips (nova-reel)
       const { videoPath } = await generateDynamicReel(plan, {
-        duration: 18,
-        language: 'hi',
-        aspectRatio: '9:16',
-        numScenes: 3
+        duration,
+        language,
+        aspectRatio,
+        numScenes
       });
       
       // Ensure target directory exists under public previews
@@ -1753,7 +1970,7 @@ app.post('/api/chat', async (req, res) => {
 
     if (chatIsConfirm || chatQuestionType === 'confirm' || chatQuestionType === 'yesno') {
       promptOverride += `\n\n### CRITICAL RESPONSE LENGTH CONSTRAINT ###\n- The user asked a simple YES/NO or confirmation question. \n- You MUST respond with a brief "Haan/Nahi" (or Yes/No equivalent in Hindi/English) followed by exactly one sentence explanation. \n- Do NOT give historical backgrounds, lists, or long details. Keep the total response under 30 words!`;
-    } else if (chatQuestionType === 'simple' && message.split(' ').length < 10) {
+    } else if (chatQuestionType === 'simple' && message.split(' ').length < 10 && !lowerMessage.includes('search') && !lowerMessage.includes('news') && !lowerMessage.includes('latest') && !lowerMessage.includes('query')) {
       promptOverride += `\n\n### CRITICAL RESPONSE LENGTH CONSTRAINT ###\n- The user asked a short, simple question. \n- Respond directly in a single, short sentence. Keep it under 40 words!`;
     }
 
