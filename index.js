@@ -15,7 +15,7 @@ import { generatePosterImage, generateFreeVideoAsset } from './services/mediaSer
 import { listSkills, readSkill } from './utils/skillLoader.js';
 import { publishInstagramPhoto, publishInstagramVideo, getInstagramRecentMedia, getInstagramProfileInfo, sendInstagramMessage, getLatestIncomingInstagramMessage } from './services/instagramService.js';
 import { toolsDefinition } from './tools.js';
-import { sendWhatsappMessage } from './services/whatsappService.js';
+import { sendWhatsappMessage, getLatestIncomingWhatsappMessage } from './services/whatsappService.js';
 import { generatePollinationsVideo } from './services/pollinationsVideoService.js';
 import { generateCompleteReel } from './services/reelEngine.js';
 import { generateDynamicReel } from './services/dynamicReelEngine.js';
@@ -189,7 +189,8 @@ function shouldBypassCache(queryText) {
     'send', 'chat', 'direct', 'reels', 'reel', 'story', 'stories', 
     'karo', 'haan', 'yes', 'ok', 'sure', 'done', 'go ahead',
     'reply', 'replied', 'check', 'dekh', 'kaha', 'kahan', 'tu', 'bata', 'bol', 'hai', 'sun', 'sunn',
-    'whatsapp', 'wa ', 'wa_', 'number', 'query:', 'search', 'latest', 'news', 'crawl', 'maxun'
+    'whatsapp', 'wa ', 'wa_', 'number', 'query:', 'search', 'latest', 'news', 'crawl', 'maxun',
+    'batao', 'bhejo', 'bhej', 'tell', 'write', 'likho'
   ];
   return keywords.some(kw => normalized.includes(kw));
 }
@@ -764,7 +765,7 @@ async function executeToolCall(toolCall, writeStreamChunk) {
       case 'send_instagram_message':
         return await sendInstagramMessage(args.username, args.message, args.mediaPath);
       case 'send_whatsapp_message':
-        return await sendWhatsappMessage(args.recipient, args.message);
+        return await sendWhatsappMessage(args.recipient, args.message, args.mediaPath);
       case 'generate_video':
         return await generatePollinationsVideo(args.prompt, args.duration || 12, args.model || 'nova-reel', args.aspectRatio || '9:16', args.audio || false);
       case 'generate_free_video_asset':
@@ -859,6 +860,68 @@ Guidelines:
           success: true,
           checkedUsername: args.username,
           message: checkResult.lastMessage ? "Last message in thread was sent by us. No reply needed." : "No chat history found."
+        });
+      }
+      case 'check_and_reply_whatsapp_messages': {
+        const checkResult = await getLatestIncomingWhatsappMessage(args.recipient);
+        if (checkResult.error) {
+          return `Error checking messages: ${checkResult.error}`;
+        }
+        if (checkResult.lastMessage && checkResult.isIncoming) {
+          console.log(`Incoming reply from WhatsApp contact "${args.recipient}": "${checkResult.lastMessage}". Generating reply...`);
+          if (writeStreamChunk) {
+            writeStreamChunk({ type: 'status', text: `Generating reply for WhatsApp contact "${args.recipient}"...` });
+          }
+
+          let formattedHistory = "";
+          if (checkResult.chatHistory && checkResult.chatHistory.length > 0) {
+            formattedHistory = checkResult.chatHistory.map(h => {
+              const sender = h.isIncoming ? args.recipient : "You";
+              return `${sender}: ${h.text}`;
+            }).join("\n");
+          } else {
+            formattedHistory = `${args.recipient}: ${checkResult.lastMessage}`;
+          }
+
+          const replyPrompt = [
+            {
+              role: 'system',
+              content: `You are Brahmand (ब्रह्मांड), an ultra-intelligent, friendly, and highly empathetic AI assistant.
+You are chatting with a WhatsApp contact named "${args.recipient}".
+Here is the recent chat history between you and "${args.recipient}":
+
+${formattedHistory}
+
+Generate a direct, natural, friendly, and highly contextual reply to send back to "${args.recipient}" over WhatsApp.
+Guidelines:
+- Analyze their last message.
+- If they ask about "Brahmand App" (or how to download/features), explain it beautifully and share the features/links (Play Store: https://play.google.com/store/apps/details?id=com.brahmand.app , App Store: https://apps.apple.com/app/brahmand-app/id6765467224).
+- Respond in natural, conversational Hinglish (warm mix of Hindi/English).
+- Keep it natural, short, and conversational.
+- Do NOT output any system tags, explanations, quotes, or conversational headers.
+- Output ONLY the raw message text to send.`
+            }
+          ];
+          const llmRes = await callLLM(replyPrompt, 0.5, 'smart');
+          let generatedReply = llmRes.text.trim().replace(/^"+|"+$/g, "");
+
+          console.log(`Generated WhatsApp reply: "${generatedReply}". Sending via WhatsApp...`);
+          if (writeStreamChunk) {
+            writeStreamChunk({ type: 'status', text: `Sending WhatsApp reply to "${args.recipient}"...` });
+          }
+          const sendRes = await sendWhatsappMessage(args.recipient, generatedReply);
+          return JSON.stringify({
+            success: true,
+            checkedRecipient: args.recipient,
+            receivedMessage: checkResult.lastMessage,
+            sentReply: generatedReply,
+            sendResult: JSON.parse(sendRes)
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          checkedRecipient: args.recipient,
+          message: checkResult.lastMessage ? "Last message in WhatsApp thread was sent by us. No reply needed." : "No chat history found."
         });
       }
       default:

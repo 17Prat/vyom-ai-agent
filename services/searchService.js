@@ -1,15 +1,32 @@
 import fetch from 'node-fetch';
-import { maxunSearcher } from './maxunService.js';
+import { maxunSearcher, maxunSearcher2 } from './maxunService.js';
+
+// Robust helper to extract results array from various Maxun response structures
+function extractSearchResults(runResult) {
+    if (!runResult) return null;
+    if (runResult.results && Array.isArray(runResult.results)) {
+        return runResult.results;
+    }
+    if (runResult.data && runResult.data.searchData) {
+        for (const key of Object.keys(runResult.data.searchData)) {
+            const searchBlock = runResult.data.searchData[key];
+            if (searchBlock && searchBlock.results && Array.isArray(searchBlock.results)) {
+                return searchBlock.results;
+            }
+        }
+    }
+    return null;
+}
 
 export async function searchWeb(query) {
     try {
         console.log("🔍 Searching web for:", query);
         console.log("DEBUG: MAXUN_API_KEY is:", process.env.MAXUN_API_KEY);
 
-        // === STRATEGY 1: Maxun Search Robot (Primary) ===
+        // === STRATEGY 1: Maxun Search Robot (Primary Key) ===
         if (process.env.MAXUN_API_KEY && process.env.MAXUN_API_KEY !== 'maxun_api_key_here') {
             try {
-                console.log("🕷️ Running Maxun Search Robot...");
+                console.log("🕷️ Running Maxun Search Robot (Primary Key)...");
                 const robot = await maxunSearcher.create(`Search-${Date.now()}`, {
                     query: query,
                     mode: 'discover',
@@ -17,9 +34,10 @@ export async function searchWeb(query) {
                 });
 
                 const runResult = await robot.run();
-                if (runResult && runResult.results && runResult.results.length > 0) {
-                    console.log(`✅ Maxun Search returned ${runResult.results.length} results.`);
-                    const snippets = runResult.results.map(item => {
+                const results = extractSearchResults(runResult);
+                if (results && results.length > 0) {
+                    console.log(`✅ Maxun Search (Primary) returned ${results.length} results.`);
+                    const snippets = results.map(item => {
                         const title = item.title || item.name || '';
                         const desc = item.description || item.snippet || '';
                         const url = item.url || '';
@@ -28,7 +46,37 @@ export async function searchWeb(query) {
                     return snippets.join("\n\n");
                 }
             } catch (maxunErr) {
-                console.warn("⚠️ Maxun Search failed, falling back to Google scrape...", maxunErr.message || maxunErr);
+                console.warn("⚠️ Maxun Primary Key failed, trying Secondary Key...", maxunErr.message || maxunErr);
+                
+                // === STRATEGY 1.5: Maxun Search Robot (Secondary Key Fallback) ===
+                if (maxunSearcher2) {
+                    try {
+                        console.log("🕷️ Running Maxun Search Robot (Secondary Key)...");
+                        const robot = await maxunSearcher2.create(`Search-${Date.now()}`, {
+                            query: query,
+                            mode: 'discover',
+                            limit: 5
+                        });
+
+                        const runResult = await robot.run();
+                        console.log("DEBUG: Secondary Key runResult structure:", JSON.stringify(runResult).substring(0, 500));
+                        const results = extractSearchResults(runResult);
+                        if (results && results.length > 0) {
+                            console.log(`✅ Maxun Search (Secondary) returned ${results.length} results.`);
+                            const snippets = results.map(item => {
+                                const title = item.title || item.name || '';
+                                const desc = item.description || item.snippet || '';
+                                const url = item.url || '';
+                                return `${title}\n${desc}\n(Source: ${url})`;
+                            });
+                            return snippets.join("\n\n");
+                        } else {
+                            console.warn("⚠️ Maxun Search (Secondary) returned empty results list:", runResult);
+                        }
+                    } catch (maxunErr2) {
+                        console.warn("⚠️ Maxun Secondary Key also failed, falling back to Google...", maxunErr2.message || maxunErr2);
+                    }
+                }
             }
         }
 

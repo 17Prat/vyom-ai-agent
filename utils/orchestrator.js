@@ -21,6 +21,62 @@ export function getJaccardSimilarity(str1, str2) {
   return intersection.size / union.size;
 }
 
+// Typo checking using Levenshtein Distance
+export function getLevenshteinSimilarity(s1, s2) {
+  const len1 = s1.length;
+  const len2 = s2.length;
+  if (len1 === 0 && len2 === 0) return 1.0;
+  if (len1 === 0 || len2 === 0) return 0.0;
+
+  const track = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(null));
+  for (let i = 0; i <= len1; i += 1) track[0][i] = i;
+  for (let j = 0; j <= len2; j += 1) track[j][0] = j;
+
+  for (let j = 1; j <= len2; j += 1) {
+    for (let i = 1; i <= len1; i += 1) {
+      const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      track[j][i] = Math.min(
+        track[j][i - 1] + 1, // deletion
+        track[j - 1][i] + 1, // insertion
+        track[j - 1][i - 1] + indicator // substitution
+      );
+    }
+  }
+  const distance = track[len2][len1];
+  const maxLength = Math.max(len1, len2);
+  return (maxLength - distance) / maxLength;
+}
+
+// Smart hybrid similarity combining word overlap, word sorting order, and typo checks
+export function getSmartSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+  
+  const clean = str => str
+    .toLowerCase()
+    .replace(/[^\w\s\u0900-\u097F]/g, '')
+    .trim();
+
+  const s1 = clean(str1);
+  const s2 = clean(str2);
+
+  if (s1 === s2) return 1.0;
+
+  // 1. Lexical overlap
+  const jacc = getJaccardSimilarity(s1, s2);
+
+  // 2. Token Sort overlap (handles query re-ordering)
+  const words1 = s1.split(/\s+/).filter(Boolean);
+  const words2 = s2.split(/\s+/).filter(Boolean);
+  const sorted1 = [...words1].sort().join(' ');
+  const sorted2 = [...words2].sort().join(' ');
+  const tokenSort = getLevenshteinSimilarity(sorted1, sorted2);
+
+  // 3. Typo distance
+  const lev = getLevenshteinSimilarity(s1, s2);
+
+  return Math.max(jacc, tokenSort, lev);
+}
+
 // Log response times
 export function recordResponseTime(db, sessionId, durationMs) {
   try {
@@ -62,7 +118,7 @@ export function findInCache(db, query) {
     let highestSim = 0;
     
     for (const row of cacheRows) {
-      const sim = getJaccardSimilarity(query, row.query_key);
+      const sim = getSmartSimilarity(query, row.query_key);
       if (sim > highestSim) {
         highestSim = sim;
         bestMatch = row;
@@ -70,7 +126,7 @@ export function findInCache(db, query) {
     }
     
     if (highestSim >= 0.85 && bestMatch) {
-      console.log(`🎯 Cache Hit! Match: "${bestMatch.query_key}" with similarity ${highestSim.toFixed(2)}`);
+      console.log(`🎯 Cache Hit! Match: "${bestMatch.query_key}" with smart similarity ${highestSim.toFixed(2)}`);
       return bestMatch;
     }
   } catch (err) {

@@ -174,6 +174,10 @@ export const toolsDefinition = [
           message: {
             type: "string",
             description: "The text message to send.",
+          },
+          mediaPath: {
+            type: "string",
+            description: "Optional URL or local absolute path of a photo/video/document file to attach to the WhatsApp message."
           }
         },
         required: ["recipient", "message"]
@@ -287,6 +291,23 @@ export const toolsDefinition = [
           }
         },
         required: ["action"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_and_reply_whatsapp_messages",
+      description: "Checks for the latest incoming WhatsApp messages from a contact and automatically generates and sends a smart contextual reply.",
+      parameters: {
+        type: "object",
+        properties: {
+          recipient: {
+            type: "string",
+            description: "The name of the WhatsApp contact to check messages from (e.g. 'Kirti').",
+          }
+        },
+        required: ["recipient"]
       }
     }
   }

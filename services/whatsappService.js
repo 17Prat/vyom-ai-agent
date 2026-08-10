@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import fetch from 'node-fetch';
 
 const CHROME_PATH = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const WA_SESSION_DIR = path.join(os.homedir(), '.brahmand-wa-session');
@@ -10,8 +11,38 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Helper to check if WhatsApp chat window with contact is already open
+async function isChatOpen(page, contactName) {
+    try {
+        return await page.evaluate((name) => {
+            const header = document.querySelector('#main header');
+            if (!header) return false;
+            const text = header.textContent || '';
+            return text.toLowerCase().includes(name.toLowerCase());
+        }, contactName);
+    } catch (e) {
+        return false;
+    }
+}
+
 let waBrowser = null;
 let waPage = null;
+
+// Helper to download remote URL files to temp directory for uploading
+async function downloadTempFile(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to download: ${res.statusText}`);
+        const buffer = await res.buffer();
+        const ext = path.extname(new URL(url).pathname) || '.jpg';
+        const tmpPath = path.join(os.tmpdir(), `wa-attach-${Date.now()}${ext}`);
+        fs.writeFileSync(tmpPath, buffer);
+        return tmpPath;
+    } catch (e) {
+        console.error("Failed to download temp media file for WA:", e.message);
+        return null;
+    }
+}
 
 // ============================================================
 // 1. GET OR CREATE PERSISTENT INSTANCE
@@ -35,9 +66,12 @@ export async function getWhatsappInstance() {
         fs.mkdirSync(WA_SESSION_DIR, { recursive: true });
     }
 
+    const isHeadless = process.env.WHATSAPP_HEADLESS === 'true';
+    console.log(`- WhatsApp Headless Mode: ${isHeadless ? "ON" : "OFF"}`);
+
     waBrowser = await puppeteer.launch({
         executablePath: CHROME_PATH,
-        headless: false,
+        headless: isHeadless,
         userDataDir: WA_SESSION_DIR,
         args: [
             '--no-sandbox',
@@ -115,15 +149,16 @@ export async function waitForWhatsAppLogin(timeoutSeconds = 120) {
 }
 
 // ============================================================
-// 3. MAIN SEND FUNCTION
+// 3. MAIN SEND FUNCTION (WITH MEDIA SUPPORT)
 // ============================================================
-export async function sendWhatsappMessage(recipient, messageText) {
-    console.log(`📤 Sending to: "${recipient}"`);
+export async function sendWhatsappMessage(recipient, messageText, mediaPath = null) {
+    console.log(`📤 Sending to: "${recipient}" (Media: ${mediaPath || "None"})`);
 
     if (!recipient || recipient.trim() === '') {
         return JSON.stringify({ success: false, error: "Recipient is empty." });
     }
 
+    let localTempPath = null;
     try {
         const { page } = await getWhatsappInstance();
 
@@ -141,76 +176,111 @@ export async function sendWhatsappMessage(recipient, messageText) {
         
         const isPhone = digitsOnly.length >= 7 && /^[0-9+\s-]+$/.test(cleanInput);
 
-        // === TRY 1: Search by name (for contacts/numbers saved under names) ===
-        const sentByName = await searchAndSend(page, cleanInput, messageText);
-        if (sentByName) {
-            return JSON.stringify({ success: true, message: `✅ Sent to "${cleanInput}"` });
+        // Pre-download media if URL
+        if (mediaPath && mediaPath.startsWith('http')) {
+            console.log(`📥 Downloading remote attachment URL: ${mediaPath}`);
+            localTempPath = await downloadTempFile(mediaPath);
+        } else if (mediaPath) {
+            localTempPath = mediaPath;
         }
 
+        // === TRY 1: Search by name (for contacts/numbers saved under names) ===
+        let targetMatched = true;
+        const alreadyOpen = await isChatOpen(page, cleanInput);
+        if (alreadyOpen) {
+            console.log(`⚡ Chat for "${cleanInput}" is already open. Skipping search.`);
+        } else {
+            targetMatched = await searchContact(page, cleanInput);
+        }
+        
         // === TRY 2: Direct URL (fallback only for phone numbers if not found in search) ===
-        if (isPhone) {
-            const sentByUrl = await sendViaDirectUrl(page, digitsOnly, messageText);
-            if (sentByUrl) {
-                return JSON.stringify({ success: true, message: `✅ Sent to ${digitsOnly} via Direct URL` });
+        if (!targetMatched && isPhone) {
+            const loadedDirect = await openDirectUrl(page, digitsOnly);
+            if (!loadedDirect) {
+                 return JSON.stringify({ success: false, error: `Could not load chat for "${recipient}".` });
+            }
+        } else if (!targetMatched) {
+            return JSON.stringify({ success: false, error: `Contact "${recipient}" not found.` });
+        }
+
+        // === ATTACH MEDIA & SEND ===
+        if (localTempPath && fs.existsSync(localTempPath)) {
+            console.log(`📎 Uploading file to WhatsApp: "${localTempPath}"`);
+            
+            // Upload file to file input
+            const fileInputHandle = await page.waitForSelector('input[type="file"]', { timeout: 10000 });
+            if (fileInputHandle) {
+                await fileInputHandle.uploadFile(localTempPath);
+                await delay(3000); // Wait for preview frame to render
+
+                // Type caption if messageText exists
+                if (messageText) {
+                    await page.keyboard.type(messageText);
+                    await delay(500);
+                }
+
+                // Press Enter to share media
+                await page.keyboard.press('Enter');
+                await delay(3000);
+                
+                // Clean up temp file
+                if (mediaPath && mediaPath.startsWith('http') && fs.existsSync(localTempPath)) {
+                    fs.unlinkSync(localTempPath);
+                }
+                return JSON.stringify({ success: true, message: `✅ Sent media attachment to "${recipient}" successfully.` });
             }
         }
 
-        return JSON.stringify({ success: false, error: `Could not send to "${recipient}".` });
+        // Standard Text Send
+        await typeAndSend(page, messageText);
+        return JSON.stringify({ success: true, message: `✅ Sent text message to "${recipient}" successfully.` });
 
     } catch (error) {
-        console.error(`❌ Error:`, error.message);
+        console.error(`❌ WhatsApp Send Error:`, error.message);
+        if (localTempPath && mediaPath && mediaPath.startsWith('http') && fs.existsSync(localTempPath)) {
+            try { fs.unlinkSync(localTempPath); } catch(e) {}
+        }
         return JSON.stringify({ success: false, error: error.message });
     }
 }
 
 // ============================================================
-// 4. SEARCH AND SEND (BY NAME)
+// 4. SEARCH CONTACT
 // ============================================================
-async function searchAndSend(page, name, messageText) {
+async function searchContact(page, name) {
     try {
         console.log(`🔍 Searching contact: "${name}"...`);
 
-        // Focus search box
-        const searchFocused = await page.evaluate(() => {
-            // Try specific WhatsApp Web search testids/attributes
-            const searchSelectors = [
-                'div[contenteditable="true"][data-tab="3"]',
-                'div[contenteditable="true"][role="textbox"]',
-                'div[contenteditable="true"]',
-                '[data-testid="search-placeholder"]',
-                '[data-testid="search"]',
-                'input[placeholder*="Search"]',
-                'div[placeholder*="Search"]',
-                'div[class*="search"] div[contenteditable="true"]'
+        // Wait for search box to load in DOM
+        let searchSelector = 'div[contenteditable="true"][data-tab="3"]';
+        try {
+            await page.waitForSelector(searchSelector, { timeout: 8000 });
+        } catch (e) {
+            // Try specific sidebar fallbacks
+            const fallbacks = [
+                '#side div[contenteditable="true"]',
+                'div[role="search"] div[contenteditable="true"]',
+                '[data-testid="chat-list-search"]',
+                '[data-testid="search-placeholder"]'
             ];
-
-            for (const selector of searchSelectors) {
-                const el = document.querySelector(selector);
-                if (el) {
-                    el.focus();
-                    // Dispatch a click or focus event just in case
-                    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                    return true;
-                }
+            for (const fb of fallbacks) {
+                try {
+                    await page.waitForSelector(fb, { timeout: 1500 });
+                    searchSelector = fb;
+                    break;
+                } catch (err) {}
             }
+        }
 
-            // Fallback: search within elements that look like search headers
-            const inputs = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
-            for (const el of inputs) {
-                if (el.closest('[role="search"]') || el.closest('header') || el.closest('[class*="search"]')) {
-                    el.focus();
-                    el.click();
-                    return true;
-                }
-            }
-            
-            if (inputs.length > 0) {
-                inputs[0].focus();
-                inputs[0].click();
+        const searchFocused = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            if (el) {
+                el.focus();
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
                 return true;
             }
             return false;
-        });
+        }, searchSelector);
 
         if (!searchFocused) {
             console.log("❌ Search box not found.");
@@ -230,55 +300,36 @@ async function searchAndSend(page, name, messageText) {
         await page.keyboard.type(name, { delay: 80 });
         await delay(2500);
 
-        // Click on contact using robust row and title text content matching
-        const clicked = await page.evaluate((searchName) => {
+        // Click on contact using native ElementHandle click simulation
+        const contactRowHandle = await page.evaluateHandle((searchName) => {
             const lowerSearch = searchName.toLowerCase().trim();
-            
-            // 1. Try finding elements with title attribute that matches the contact name
             const titleElements = Array.from(document.querySelectorAll('[title]'));
             for (const el of titleElements) {
                 const titleText = el.getAttribute('title')?.trim().toLowerCase() || '';
                 if (titleText.includes(lowerSearch)) {
-                    el.click();
-                    return true;
+                    return el.closest('[role="row"]') || el.closest('[role="listitem"]') || el;
                 }
             }
 
-            // 2. Try matching rows
             const rows = document.querySelectorAll('[role="row"], [role="listitem"]');
             for (const row of rows) {
                 const text = row.textContent?.trim() || '';
                 if (text.toLowerCase().includes(lowerSearch)) {
-                    // Try to click a clickable element inside row or the row itself
-                    const clickable = row.querySelector('[clickable="true"]') || row.querySelector('div') || row;
-                    clickable.click();
-                    return true;
+                    return row;
                 }
             }
-
-            // 3. Fallback: match any text block containing the name inside pane-side
-            const sidebar = document.querySelector('div[id="pane-side"]') || document.body;
-            const matches = Array.from(sidebar.querySelectorAll('*')).filter(el => {
-                const title = el.getAttribute('title') || el.textContent || '';
-                return title.trim().toLowerCase().includes(lowerSearch);
-            });
-            if (matches.length > 0) {
-                const clickTarget = matches[0].closest('[role="row"]') || matches[0].closest('[role="listitem"]') || matches[0];
-                clickTarget.click();
-                return true;
-            }
-            return false;
+            return null;
         }, name);
 
-        if (!clicked) {
-            console.log(`❌ Contact "${name}" not found.`);
+        const contactRow = contactRowHandle.asElement();
+        if (!contactRow) {
+            console.log(`❌ Contact "${name}" not found in list.`);
             return false;
         }
 
-        await delay(2000);
-
-        // Send message
-        await typeAndSend(page, messageText);
+        console.log("📍 Click target found. Simulating native click...");
+        await contactRow.click();
+        await delay(3000); // Wait for chat window to load
         return true;
 
     } catch (error) {
@@ -288,17 +339,16 @@ async function searchAndSend(page, name, messageText) {
 }
 
 // ============================================================
-// 5. DIRECT URL (BY PHONE NUMBER)
+// 5. DIRECT URL NAVIGATION
 // ============================================================
-async function sendViaDirectUrl(page, phone, messageText) {
+async function openDirectUrl(page, phone) {
     try {
         const url = `https://web.whatsapp.com/send?phone=${phone}`;
-        console.log(`🌐 Opening: ${url}`);
+        console.log(`🌐 Opening direct chat link: ${url}`);
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await delay(5000);
 
-        // Check invalid number
         const invalid = await page.evaluate(() => {
             const divs = Array.from(document.querySelectorAll('div'));
             return divs.some(el => el.textContent?.includes('Phone number shared via url is invalid'));
@@ -309,7 +359,6 @@ async function sendViaDirectUrl(page, phone, messageText) {
             return false;
         }
 
-        // Wait for chat to load
         let loaded = false;
         for (let i = 0; i < 20; i++) {
             const hasInput = await page.evaluate(() => {
@@ -323,16 +372,15 @@ async function sendViaDirectUrl(page, phone, messageText) {
         }
 
         if (!loaded) {
-            console.log("❌ Chat not loaded.");
+            console.log("❌ Direct chat input failed to load.");
             return false;
         }
 
         await delay(2000);
-        await typeAndSend(page, messageText);
         return true;
 
     } catch (error) {
-        console.error(`❌ Direct URL error:`, error.message);
+        console.error(`❌ Direct URL navigation error:`, error.message);
         return false;
     }
 }
@@ -342,27 +390,47 @@ async function sendViaDirectUrl(page, phone, messageText) {
 // ============================================================
 async function typeAndSend(page, messageText) {
     try {
-        // Focus input
-        const focused = await page.evaluate(() => {
-            const inputs = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
-            for (const el of inputs) {
-                const isSearch = el.closest('[role="search"]') ||
-                                 el.closest('header') ||
-                                 el.getAttribute('data-tab') === '3';
-                if (!isSearch) {
-                    el.focus();
-                    return true;
-                }
+        console.log("⏳ Waiting for chat input field to load...");
+        
+        const selectors = [
+            'footer div[contenteditable="true"]',
+            'div[contenteditable="true"][data-tab="10"]',
+            'div[contenteditable="true"][title*="message"]',
+            'div[contenteditable="true"][title*="संदेश"]',
+            'div[contenteditable="true"][role="textbox"]'
+        ];
+
+        let activeSelector = null;
+        for (const sel of selectors) {
+            try {
+                await page.waitForSelector(sel, { timeout: 2000 });
+                activeSelector = sel;
+                break;
+            } catch (e) {
+                // Try next
             }
-            if (inputs.length > 0) {
-                inputs[inputs.length - 1].focus();
+        }
+
+        if (!activeSelector) {
+            console.log("⚠️ No specific input selector loaded, trying generic fallback...");
+            activeSelector = 'div[contenteditable="true"]';
+        }
+
+        const focused = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            if (el) {
+                el.focus();
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
                 return true;
             }
             return false;
-        });
+        }, activeSelector);
 
         if (!focused) {
-            console.log("❌ Input not focused.");
+            console.log("❌ Input not focused. Saving debug screenshot to temp/wa_error.png...");
+            const tempDir = path.join(process.cwd(), 'temp');
+            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+            await page.screenshot({ path: path.join(tempDir, 'wa_error.png') });
             return false;
         }
 
@@ -378,7 +446,7 @@ async function typeAndSend(page, messageText) {
         return true;
 
     } catch (error) {
-        console.error(`❌ Type error:`, error.message);
+        console.error(`❌ Type and send error:`, error.message);
         return false;
     }
 }
@@ -399,5 +467,57 @@ export function clearWhatsappSession() {
     if (fs.existsSync(WA_SESSION_DIR)) {
         fs.rmSync(WA_SESSION_DIR, { recursive: true, force: true });
         console.log("🧹 Session cleared.");
+    }
+}
+
+// ============================================================
+// 8. CHECK LATEST INCOMING MESSAGES FOR AUTO-REPLY
+// ============================================================
+export async function getLatestIncomingWhatsappMessage(contactName) {
+    console.log(`📥 Checking WhatsApp messages for: "${contactName}"`);
+    try {
+        const { page } = await getWhatsappInstance();
+        await waitForWhatsAppLogin(120);
+
+        let targetMatched = true;
+        const alreadyOpen = await isChatOpen(page, contactName);
+        if (alreadyOpen) {
+            console.log(`⚡ Chat for "${contactName}" is already open. Skipping search.`);
+        } else {
+            targetMatched = await searchContact(page, contactName);
+        }
+        if (!targetMatched) {
+            return { error: `Contact "${contactName}" not found.` };
+        }
+
+        // Wait for chat messages container to be populated
+        await page.waitForSelector('div[class*="message-"]', { timeout: 8000 }).catch(() => {});
+
+        // Extract chat history (incoming vs outgoing message bubbles)
+        const chatHistory = await page.evaluate(() => {
+            const bubbles = Array.from(document.querySelectorAll('div[class*="message-in"], div[class*="message-out"]'));
+            return bubbles.map(el => {
+                const isIncoming = el.className.includes('message-in');
+                // Extract text from the standard copyable WhatsApp message container
+                const textEl = el.querySelector('span[class*="selectable-text"], div[class*="copyable-text"] span');
+                const text = textEl ? textEl.textContent.trim() : '';
+                return { isIncoming, text };
+            }).filter(h => h.text !== '');
+        });
+
+        if (chatHistory.length === 0) {
+            return { lastMessage: null, isIncoming: false, chatHistory: [] };
+        }
+
+        const lastMsg = chatHistory[chatHistory.length - 1];
+        return {
+            lastMessage: lastMsg.text,
+            isIncoming: lastMsg.isIncoming,
+            chatHistory: chatHistory.slice(-10) // return last 10 messages context
+        };
+
+    } catch (e) {
+        console.error("❌ WhatsApp message check failed:", e.message);
+        return { error: e.message };
     }
 }
