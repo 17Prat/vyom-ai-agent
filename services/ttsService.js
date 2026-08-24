@@ -1,103 +1,127 @@
 // services/ttsService.js
 import path from 'path';
 import fs from 'fs-extra';
+import { Communicate } from 'edge-tts-universal';
 
 /**
- * Free Text-to-Speech using Edge TTS (Microsoft)
- * No API key required
+ * Free Text-to-Speech using Edge TTS (Microsoft) with Google TTS fallback.
+ * No API key required.
  */
 export async function generateNarration(text, language = 'hi') {
     const tempDir = path.join(process.cwd(), 'temp');
     await fs.ensureDir(tempDir);
     const outputPath = path.join(tempDir, `narration_${Date.now()}.mp3`);
     
-    // Voice mapping
+    if (!text || !text.trim()) {
+        return await generateSilentAudio(5);
+    }
+    
+    const cleanText = text.trim();
+
+    // Voice mapping for Edge TTS
     const voices = {
-        'hi': 'hi-IN-SwaraNeural',    // Hindi female
+        'hi': 'hi-IN-SwaraNeural',     // Hindi female
         'en': 'en-US-JennyNeural',     // English female
         'hi-en': 'hi-IN-SwaraNeural'   // Hinglish
     };
     
     const voice = voices[language] || voices['hi'];
     
+    // 1. Try Microsoft Edge TTS via Communicate from edge-tts-universal
     try {
-        console.log(`🎤 Synthesizing TTS voiceover using voice: "${voice}"...`);
-        
-        let EdgeTTS;
-        try {
-            const module = await import('edge-tts-universal');
-            EdgeTTS = module.EdgeTTS || module.default;
-        } catch (err) {
-            throw new Error("Missing dependency: 'edge-tts-universal'. Run: npm install edge-tts-universal");
+        console.log(`🎤 Synthesizing TTS voiceover using Edge TTS voice: "${voice}"...`);
+        const communicate = new Communicate(cleanText, { voice });
+        const audioChunks = [];
+        for await (const chunk of communicate.stream()) {
+            if (chunk.type === 'audio' && chunk.data) {
+                audioChunks.push(chunk.data);
+            }
         }
-        
-        const tts = new EdgeTTS();
-        
-        // Try multiple API patterns (package version differs)
-        let success = false;
-
-        // Pattern 1: ttsPromise(text, outputPath, voice)
-        if (!success && typeof tts.ttsPromise === 'function') {
-            try {
-                await tts.ttsPromise(text, outputPath, voice);
-                success = true;
-                console.log('✅ TTS done via ttsPromise()');
-            } catch (e) { console.warn('  TTS pattern 1 failed:', e.message); }
+        if (audioChunks.length > 0) {
+            const fullBuffer = Buffer.concat(audioChunks);
+            await fs.writeFile(outputPath, fullBuffer);
+            console.log(`✅ Edge TTS Audio saved successfully: ${outputPath} (${fullBuffer.length} bytes)`);
+            return outputPath;
         }
-
-        // Pattern 2: synthesize(text, voice) → returns buffer → write to file
-        if (!success && typeof tts.synthesize === 'function') {
-            try {
-                const buffer = await tts.synthesize(text, voice);
-                if (buffer) {
-                    await fs.writeFile(outputPath, buffer);
-                    success = true;
-                    console.log('✅ TTS done via synthesize()');
-                }
-            } catch (e) { console.warn('  TTS pattern 2 failed:', e.message); }
-        }
-
-        // Pattern 3: toFile(outputPath, text, { voice })
-        if (!success && typeof tts.toFile === 'function') {
-            try {
-                await tts.toFile(outputPath, text, { voice });
-                success = true;
-                console.log('✅ TTS done via toFile()');
-            } catch (e) { console.warn('  TTS pattern 3 failed:', e.message); }
-        }
-
-        // Pattern 4: generate(text, { voice }) → write stream
-        if (!success && typeof tts.generate === 'function') {
-            try {
-                const audioData = await tts.generate(text, { voice });
-                if (audioData) {
-                    await fs.writeFile(outputPath, audioData instanceof Buffer ? audioData : Buffer.from(audioData));
-                    success = true;
-                    console.log('✅ TTS done via generate()');
-                }
-            } catch (e) { console.warn('  TTS pattern 4 failed:', e.message); }
-        }
-
-        // Pattern 5: saveToFile (original — may work on some versions)
-        if (!success && typeof tts.saveToFile === 'function') {
-            try {
-                await tts.saveToFile(outputPath, text, { voice });
-                success = true;
-                console.log('✅ TTS done via saveToFile()');
-            } catch (e) { console.warn('  TTS pattern 5 failed:', e.message); }
-        }
-
-        if (!success) throw new Error('All edge-tts-universal API patterns failed');
-
-        console.log(`✅ TTS Audio saved: ${outputPath}`);
-        return outputPath;
-
-    } catch (error) {
-        console.error('❌ Edge TTS Error:', error.message);
-        console.warn('⚠️ TTS failed. Using silent audio fallback...');
-        return await generateSilentAudio(calculateDuration(text));
+        throw new Error('Edge TTS returned no audio chunks');
+    } catch (edgeErr) {
+        console.warn(`⚠️ Edge TTS failed: ${edgeErr.message}. Trying Google TTS fallback...`);
     }
 
+    // 2. Fallback: Google Translate TTS API
+    try {
+        const fallbackPath = await generateGoogleTTS(cleanText, language, outputPath);
+        return fallbackPath;
+    } catch (googleErr) {
+        console.warn(`⚠️ Google TTS failed: ${googleErr.message}. Using silent audio fallback...`);
+    }
+
+    // 3. Last Resort: Silent Audio
+    return await generateSilentAudio(calculateDuration(cleanText));
+}
+
+/**
+ * Helper to generate speech using Google Translate TTS API
+ */
+async function generateGoogleTTS(text, language = 'hi', outputPath) {
+    const lang = (language === 'en') ? 'en' : 'hi';
+    const chunks = splitTextIntoChunks(text, 150);
+    const audioBuffers = [];
+
+    for (const chunk of chunks) {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(`Google TTS request failed with status ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        audioBuffers.push(Buffer.from(arrayBuffer));
+    }
+
+    const fullBuffer = Buffer.concat(audioBuffers);
+    await fs.writeFile(outputPath, fullBuffer);
+    console.log(`✅ Google TTS Audio saved successfully: ${outputPath} (${fullBuffer.length} bytes)`);
+    return outputPath;
+}
+
+/**
+ * Split text into chunks by space/punctuation without exceeding maxLen
+ */
+function splitTextIntoChunks(text, maxLen = 150) {
+    const sentences = text.match(/[^.!?।\n]+[.!?।\n]?/g) || [text];
+    const chunks = [];
+    let currentChunk = '';
+
+    for (const sentence of sentences) {
+        if ((currentChunk + sentence).length <= maxLen) {
+            currentChunk += sentence;
+        } else {
+            if (currentChunk.trim()) chunks.push(currentChunk.trim());
+            if (sentence.length > maxLen) {
+                // If sentence alone is longer than maxLen, split by words
+                const words = sentence.split(/\s+/);
+                currentChunk = '';
+                for (const word of words) {
+                    if ((currentChunk + ' ' + word).length <= maxLen) {
+                        currentChunk += (currentChunk ? ' ' : '') + word;
+                    } else {
+                        if (currentChunk.trim()) chunks.push(currentChunk.trim());
+                        currentChunk = word;
+                    }
+                }
+            } else {
+                currentChunk = sentence;
+            }
+        }
+    }
+    if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+    }
+    return chunks;
 }
 
 function calculateDuration(text) {
@@ -154,3 +178,4 @@ export async function generateSilentAudioFallback(duration) {
     console.log(`✅ Fallback silent audio created: ${outputPath}`);
     return outputPath;
 }
+

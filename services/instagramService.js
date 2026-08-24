@@ -8,7 +8,17 @@ import os from "os";
 import dotenv from "dotenv";
 dotenv.config();
 
-const CHROME_PATH = "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const CHROME_PATH = (() => {
+  const paths = [
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    path.join(process.env.LOCALAPPDATA || '', "Google/Chrome/Application/chrome.exe")
+  ];
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return paths[0];
+})();
 
 function parseNum(str) {
   if (!str) return 0;
@@ -152,7 +162,7 @@ async function igLogin() {
   }
 
   // Type password
-  const passwordInput = await page.$('input[name="pass"]');
+  const passwordInput = await page.$('input[name="password"], input[name="pass"]');
   if (passwordInput) {
     await passwordInput.click();
     await passwordInput.type(password, { delay: 30 });
@@ -591,10 +601,11 @@ export async function sendInstagramMessage(username, messageText, mediaPath) {
     console.log("Profile buttons:", profileBtns);
 
     await page.evaluate(() => {
-      const all = document.querySelectorAll('button, div[role="button"]');
+      const header = document.querySelector('header');
+      const all = header ? header.querySelectorAll('button, div[role="button"]') : document.querySelectorAll('button, div[role="button"]');
       for (const el of all) {
         const t = el.textContent?.trim().toLowerCase() || '';
-        if (t === 'message') { el.click(); return; }
+        if (t.includes('message')) { el.click(); return; }
       }
     });
     await delay(5000);
@@ -699,54 +710,79 @@ export async function getLatestIncomingInstagramMessage(username) {
   const { page } = ig;
 
   try {
-    console.log(`Checking messages for @${username}...`);
-    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
-    await delay(3000);
+    const onChatPage = page.url().includes('/direct/t/');
+    if (!onChatPage) {
+      console.log(`Checking messages for @${username}...`);
+      await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
+      await delay(3000);
 
-    // Click Message button to open thread
-    const clicked = await page.evaluate(() => {
-      const all = document.querySelectorAll('button, div[role="button"]');
-      for (const el of all) {
-        const t = el.textContent?.trim().toLowerCase() || '';
-        if (t === 'message') { el.click(); return true; }
+      // Click Message button to open thread
+      const clicked = await page.evaluate(() => {
+        const header = document.querySelector('header');
+        const all = header ? header.querySelectorAll('button, div[role="button"]') : document.querySelectorAll('button, div[role="button"]');
+        for (const el of all) {
+          const t = el.textContent?.trim().toLowerCase() || '';
+          if (t.includes('message')) { el.click(); return true; }
+        }
+        return false;
+      });
+
+      if (!clicked) {
+        return { error: `Could not find Message button on @${username}'s profile.` };
       }
-      return false;
-    });
 
-    if (!clicked) {
-      return { error: `Could not find Message button on @${username}'s profile.` };
+      await delay(5000); // Wait for messages to load
     }
-
-    await delay(5000); // Wait for messages to load
 
     // Read message list and analyze alignment
     const result = await page.evaluate(() => {
       const inputEl = document.querySelector('textarea, div[role="textbox"], div[contenteditable="true"]');
       const inputRect = inputEl ? inputEl.getBoundingClientRect() : null;
 
-      const bubbles = Array.from(document.querySelectorAll('div[dir="auto"], span[dir="auto"]')).filter(el => {
-        const text = el.textContent?.trim();
-        if (!text || text.length === 0 || el.offsetParent === null) return false;
-        
-        // Filter out elements that are to the left of the chat window (e.g. sidebar threads)
-        if (inputRect) {
-          const rect = el.getBoundingClientRect();
-          if (rect.left < inputRect.left - 50) return false;
-        }
-        return true;
-      });
-
-      if (bubbles.length === 0) return null;
-
       // Find the main chat box container
       const chatBox = inputEl ? inputEl.closest('div[style*="height"], div.x9f619') || inputEl.parentElement : document.body;
       const boxRect = chatBox.getBoundingClientRect();
       const midPoint = boxRect.left + (boxRect.width / 2);
 
-      const parsed = bubbles.map(el => {
+      // Extract text containers
+      const bubbles = [];
+      const textContainers = chatBox.querySelectorAll('span, div[dir="auto"]');
+      for (const el of textContainers) {
+        const text = el.textContent?.trim();
+        if (!text || el.offsetParent === null) continue;
+
+        // Skip structural parent/wrapper divs that contain other text structures
+        const children = el.children;
+        let hasNestedText = false;
+        for (let idx = 0; idx < children.length; idx++) {
+          if (['DIV', 'SPAN', 'P'].includes(children[idx].nodeName)) {
+            hasNestedText = true;
+            break;
+          }
+        }
+        if (hasNestedText) continue;
+
+        // Exclude system labels or status messages
+        if (text.includes('Active now') || text.includes('Seen') || text.includes('Typing...') || text.match(/^\d{1,2}:\d{2}\s*(AM|PM)?$/i)) {
+          continue;
+        }
+
         const rect = el.getBoundingClientRect();
-        // Check alignment: Aligned left of center line = incoming
-        const isIncoming = (rect.left + rect.width / 2) < midPoint;
+        // Ignore nodes that are hidden or too small
+        if (rect.width < 5 || rect.height < 5) continue;
+
+        // Compare position with direct message window bounds to ignore sidebar items
+        if (inputRect && rect.left < inputRect.left - 20) continue;
+
+        bubbles.push({ el, rect });
+      }
+
+      if (bubbles.length === 0) return null;
+
+      const parsed = bubbles.map(({ el, rect }) => {
+        const leftSpacing = rect.left - boxRect.left;
+        const rightSpacing = boxRect.right - rect.right;
+        const isIncoming = leftSpacing < rightSpacing;
         return {
           text: el.textContent.trim(),
           y: rect.top,
@@ -754,7 +790,7 @@ export async function getLatestIncomingInstagramMessage(username) {
         };
       });
 
-      // Sort by vertical position (Y-coordinate) to get chronological order
+      // Sort by Y coordinate to get chronological order
       parsed.sort((a, b) => a.y - b.y);
       return parsed;
     });

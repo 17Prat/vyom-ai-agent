@@ -1138,8 +1138,19 @@
                       btn.disabled = false;
                       btn.innerHTML = origHtml;
                       if(data.audioUrl){
-                        const audio = new Audio(data.audioUrl);
-                        audio.play();
+                        const audio = new Audio(data.audioUrl + '?t=' + Date.now());
+                        audio.play().catch(err => {
+                          console.warn('Audio play failed, using Web Speech API fallback:', err);
+                          if ('speechSynthesis' in window) {
+                            const ut = new SpeechSynthesisUtterance(txt);
+                            ut.lang = 'hi-IN';
+                            window.speechSynthesis.speak(ut);
+                          }
+                        });
+                      } else if ('speechSynthesis' in window) {
+                        const ut = new SpeechSynthesisUtterance(txt);
+                        ut.lang = 'hi-IN';
+                        window.speechSynthesis.speak(ut);
                       } else {
                         alert('TTS generation failed!');
                       }
@@ -1147,7 +1158,13 @@
                     .catch(e => {
                       btn.disabled = false;
                       btn.innerHTML = origHtml;
-                      alert('Error: ' + e.message);
+                      if ('speechSynthesis' in window) {
+                        const ut = new SpeechSynthesisUtterance(txt);
+                        ut.lang = 'hi-IN';
+                        window.speechSynthesis.speak(ut);
+                      } else {
+                        alert('Error: ' + e.message);
+                      }
                     });
                   })(this, '${narrationId}')" 
                   style="background: #E2E8F0; color: #1E293B; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; gap: 4px; transition: all 0.2s; outline: none;"

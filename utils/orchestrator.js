@@ -112,6 +112,14 @@ export function classifySpeed(avgDurationMs) {
 // Check cache for similar queries (similarity >= 0.85)
 export function findInCache(db, query) {
   try {
+    // ⚡ Fast O(log N) Exact Match Check First
+    const exactStmt = db.prepare('SELECT query_key, response_text, model_name, image_url FROM response_cache WHERE LOWER(TRIM(query_key)) = ?');
+    const exactMatch = exactStmt.get(query.toLowerCase().trim());
+    if (exactMatch) {
+      console.log(`🎯 Cache Hit! Exact Match: "${exactMatch.query_key}"`);
+      return exactMatch;
+    }
+
     const stmt = db.prepare('SELECT query_key, response_text, model_name, image_url FROM response_cache');
     const cacheRows = stmt.all();
     let bestMatch = null;
@@ -126,7 +134,7 @@ export function findInCache(db, query) {
     }
     
     if (highestSim >= 0.85 && bestMatch) {
-      console.log(`🎯 Cache Hit! Match: "${bestMatch.query_key}" with smart similarity ${highestSim.toFixed(2)}`);
+      console.log(`🎯 Cache Hit! Fuzzy Match: "${bestMatch.query_key}" with smart similarity ${highestSim.toFixed(2)}`);
       return bestMatch;
     }
   } catch (err) {

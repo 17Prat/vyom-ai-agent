@@ -89,7 +89,7 @@ export const toolsDefinition = [
         properties: {
           username: {
             type: "string",
-            description: "Instagram username to fetch posts from (e.g. 'vishal_y_24'). Leave empty for own account.",
+            description: "Instagram username to fetch posts from (e.g. 'target_username'). Leave empty for own account.",
           },
         },
         required: [],
@@ -127,7 +127,7 @@ export const toolsDefinition = [
         properties: {
           username: {
             type: "string",
-            description: "Instagram username to fetch profile of (e.g. 'its_pooja_067_'). Leave empty for own account.",
+            description: "Instagram username to fetch profile of (e.g. 'target_username'). Leave empty for own account.",
           },
         },
         required: [],
@@ -144,7 +144,7 @@ export const toolsDefinition = [
         properties: {
           username: {
             type: "string",
-            description: "Instagram username to send the message to (e.g. 'vishal_y_24').",
+            description: "Instagram username to send the message to (e.g. 'target_username').",
           },
           message: {
             type: "string",
@@ -169,7 +169,7 @@ export const toolsDefinition = [
         properties: {
           recipient: {
             type: "string",
-            description: "Target phone number with country code (digits only, e.g. '919876543210') OR contact name (e.g. 'Kirti').",
+            description: "Target phone number with country code (digits only, e.g. '919876543210') OR contact name.",
           },
           message: {
             type: "string",
@@ -304,11 +304,87 @@ export const toolsDefinition = [
         properties: {
           recipient: {
             type: "string",
-            description: "The name of the WhatsApp contact to check messages from (e.g. 'Kirti').",
+            description: "The name of the WhatsApp contact to check messages from.",
           }
         },
         required: ["recipient"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "store_user_fact",
+      description: "Stores important long-term user facts, preferences, business details, brand tone, or target audience into memory for future conversations.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            description: "Category of the fact (e.g. 'business', 'brand_style', 'preference', 'contact', 'general').",
+          },
+          key: {
+            type: "string",
+            description: "The name/key of the memory (e.g. 'brand_name', 'target_audience', 'preferred_language', 'contact_number').",
+          },
+          value: {
+            type: "string",
+            description: "The detailed value/fact to store.",
+          }
+        },
+        required: ["key", "value"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_user_facts",
+      description: "Retrieves stored facts, business profile, brand rules, or saved user preferences from persistent memory.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            description: "Optional category to filter facts by (e.g. 'business', 'brand_style', 'preference'). Leave empty to fetch all.",
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_viral_content_ideas",
+      description: "Fetches currently trending viral Reel concepts, high-converting hooks, viral audio cues, and strategic hashtag combinations for a specific niche.",
+      parameters: {
+        type: "object",
+        properties: {
+          niche: {
+            type: "string",
+            description: "The niche or topic for content ideas (e.g. 'spiritual', 'ai & tech', 'fitness', 'finance', 'fashion').",
+          },
+          targetAudience: {
+            type: "string",
+            description: "Target audience region or language (e.g. 'India Hinglish', 'Global English', 'Youth').",
+          }
+        },
+        required: ["niche"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_agent_analytics",
+      description: "Generates an automated performance analytics summary of all agent operations (reels generated, DMs sent, WhatsApp campaigns run, active models, DB stats).",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
   }
 ];
+

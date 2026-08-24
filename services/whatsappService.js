@@ -4,7 +4,17 @@ import path from 'path';
 import os from 'os';
 import fetch from 'node-fetch';
 
-const CHROME_PATH = "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const CHROME_PATH = (() => {
+    const paths = [
+        "C:/Program Files/Google/Chrome/Application/chrome.exe",
+        "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+        path.join(process.env.LOCALAPPDATA || '', "Google/Chrome/Application/chrome.exe")
+    ];
+    for (const p of paths) {
+        if (fs.existsSync(p)) return p;
+    }
+    return paths[0];
+})();
 const WA_SESSION_DIR = path.join(os.homedir(), '.brahmand-wa-session');
 
 function delay(ms) {
@@ -251,36 +261,51 @@ async function searchContact(page, name) {
     try {
         console.log(`🔍 Searching contact: "${name}"...`);
 
-        // Wait for search box to load in DOM
-        let searchSelector = 'div[contenteditable="true"][data-tab="3"]';
-        try {
-            await page.waitForSelector(searchSelector, { timeout: 8000 });
-        } catch (e) {
-            // Try specific sidebar fallbacks
-            const fallbacks = [
-                '#side div[contenteditable="true"]',
-                'div[role="search"] div[contenteditable="true"]',
-                '[data-testid="chat-list-search"]',
-                '[data-testid="search-placeholder"]'
-            ];
-            for (const fb of fallbacks) {
-                try {
-                    await page.waitForSelector(fb, { timeout: 1500 });
-                    searchSelector = fb;
-                    break;
-                } catch (err) {}
-            }
+        // Wait for any of the common search box selectors to appear in DOM
+        const searchSelectors = [
+            'div[contenteditable="true"][data-tab="3"]',
+            'div[contenteditable="true"]',
+            'div[role="textbox"]',
+            '[data-testid="chat-list-search"]'
+        ];
+
+        let activeSearchSelector = null;
+        for (const sel of searchSelectors) {
+            try {
+                await page.waitForSelector(sel, { timeout: 4000 });
+                activeSearchSelector = sel;
+                break;
+            } catch (e) {}
+        }
+
+        if (!activeSearchSelector) {
+            console.log("⚠️ Search selectors not found via waitForSelector, attempting evaluate fallback...");
         }
 
         const searchFocused = await page.evaluate((sel) => {
-            const el = document.querySelector(sel);
-            if (el) {
-                el.focus();
-                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                return true;
+            if (sel) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    el.focus();
+                    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    return true;
+                }
+            }
+            // Fallback evaluate
+            const editables = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
+            for (const el of editables) {
+                const isSearch = el.closest('#side') || 
+                                 el.getAttribute('title')?.toLowerCase().includes('search') ||
+                                 el.getAttribute('title')?.toLowerCase().includes('खोजें') ||
+                                 el.getAttribute('data-tab') === '3';
+                if (isSearch) {
+                    el.focus();
+                    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    return true;
+                }
             }
             return false;
-        }, searchSelector);
+        }, activeSearchSelector);
 
         if (!searchFocused) {
             console.log("❌ Search box not found.");

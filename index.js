@@ -8,8 +8,9 @@ import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
-
+ 
 import { searchWeb } from './services/searchService.js';
+import { askLLM } from './services/llmService.js';
 import { scrapeWebsite } from './services/scrapeService.js';
 import { generatePosterImage, generateFreeVideoAsset } from './services/mediaService.js';
 import { listSkills, readSkill } from './utils/skillLoader.js';
@@ -51,7 +52,7 @@ try {
         const filePath = path.join(__dirname, file);
         if (fs.statSync(filePath).isFile()) {
           fs.unlinkSync(filePath);
-          console.log(`🧹 Deleted test file: ${file}`);
+           console.log(`🧹 Deleted test file: ${file}`);
         }
       } catch (e) {
         console.warn(`Failed to delete ${file}:`, e.message);
@@ -98,7 +99,7 @@ db.exec(`
     role TEXT,
     content TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  );    
   CREATE TABLE IF NOT EXISTS response_times (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT,
@@ -116,7 +117,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS user_preferences (
     key TEXT PRIMARY KEY,
     value TEXT
-  );
+  );    
   CREATE TABLE IF NOT EXISTS session_data (
     session_id TEXT NOT NULL,
     key TEXT NOT NULL,
@@ -149,7 +150,14 @@ const groq2 = process.env.GROQ_API_KEY_2
   ? new Groq({ apiKey: process.env.GROQ_API_KEY_2 })
   : null;
 
-// Anthropic Claude — PRIMARY provider
+// NVIDIA NIM — PRIMARY provider
+if (process.env.NVIDIA_API_KEY) {
+  console.log('🟢 NVIDIA NIM loaded as PRIMARY LLM provider (Llama-3.3 70B / Mistral / DeepSeek).');
+} else {
+  console.warn('⚠️  NVIDIA_API_KEY not set — NVIDIA PRIMARY disabled.');
+}
+
+// Anthropic Claude — Secondary provider
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ 
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -158,9 +166,9 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   : null;
 
 if (anthropic) {
-  console.log('✅ Anthropic Claude loaded as PRIMARY provider.');
+  console.log('✅ Anthropic Claude loaded as Secondary fallback provider.');
 } else {
-  console.warn('⚠️  ANTHROPIC_API_KEY not set — Claude PRIMARY disabled, falling back to OpenAI/Groq.');
+  console.warn('⚠️  ANTHROPIC_API_KEY not set — Claude fallback disabled.');
 }
 
 // OpenAI — secondary provider (fetch-based, no extra package needed)
@@ -400,7 +408,7 @@ Aur hamesha puchho: **"Aur kya?"** — ya koi aur natural sawal taaki conversati
 - Respond in natural, conversational Hinglish (or match the user's input language/script). Keep responses helpful and premium.
 - Before responding, perform deep step-by-step reasoning about the request.
 - **MESSAGING RULE**: When sending WhatsApp or Instagram messages, you MUST extract the exact recipient name or number specified by the user and pass it as the recipient. DO NOT hardcode any names or use mock values.
-- Cite sources intelligently using markdown links.
+- Cite sources intelligently using markdown links. 
 - Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single \`\`\`html ... \`\`\` block.`;
 
 // ============================================================
@@ -434,7 +442,7 @@ const GATEWAY_MODELS = {
 // Converts OpenAI-style messages/tools ↔ Claude API format transparently.
 // ─────────────────────────────────────────────────────────────────────────────
 async function callClaude(messages, temperature, modelId, tools = null) {
-  // 1. Split system message out (Claude takes it separately)
+// 1. Split system message out (Claude takes it separately)
   let systemText = '';
   const userMessages = [];
   for (const msg of messages) {
@@ -472,7 +480,7 @@ async function callClaude(messages, temperature, modelId, tools = null) {
     }
   }
 
-  // 2. Convert OpenAI tools → Claude tools schema
+ // 2. Convert OpenAI tools → Claude tools schema
   const claudeTools = tools ? tools
     .filter(t => t.type === 'function' && t.function)
     .map(t => ({
@@ -551,10 +559,91 @@ async function callGateway(messages, temperature, modelId, tools = null) {
   };
 }
 
+async function callGemini(messages, temperature, modelId = 'gemini-2.0-flash') {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+  
+  let systemInstruction = undefined;
+  const contents = [];
+  for (const m of messages) {
+    if (m.role === 'system') {
+      systemInstruction = { parts: [{ text: m.content || '' }] };
+    } else {
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      contents.push({ role, parts: [{ text: m.content || '' }] });
+    }
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+  const body = { contents, generationConfig: { temperature, maxOutputTokens: 2048 } };
+  if (systemInstruction) body.systemInstruction = systemInstruction;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return { text, tool_calls: null, model: `Google Gemini (${modelId})` };
+}
+
+async function callOpenRouter(messages, temperature, modelId = 'meta-llama/llama-3.3-70b-instruct:free') {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
+   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({ model: modelId, messages, temperature, max_tokens: 2048 })
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${errText}`);
+  }
+  const data = await res.json();
+  const msg = data.choices?.[0]?.message;
+  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: `OpenRouter (${modelId})` };
+}
+
+async function callNvidia(messages, temperature, modelId = 'meta/llama-3.3-70b-instruct', tools = null) {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) throw new Error('NVIDIA_API_KEY not configured');
+  const body = { model: modelId, messages, temperature, max_tokens: 2048 };
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
+  const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`NVIDIA ${res.status}: ${errText}`);
+  }
+  const data = await res.json();
+  const msg = data.choices?.[0]?.message;
+  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: `NVIDIA (${modelId})` };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenAI API bridge (fetch-based — no extra npm package needed)
 // Converts our standard messages/tools format to OpenAI API directly.
-// ─────────────────────────────────────────────────────────────────────────────
+//  ─────────────────────────────────────────────────────────────────────────────
 async function callOpenAI(messages, temperature, modelId = 'gpt-4o-mini', tools = null) {
   const body = {
     model: modelId,
@@ -604,7 +693,7 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto', tools 
     } catch (err) {
       console.warn(`LLM attempt ${attempt + 1} failed: ${err.message}`);
       if (attempt === maxRetries) throw err;
-    }
+    } 
   }
 }
 
@@ -612,21 +701,113 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
   const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
   const providerErrors = []; // collect all failure details
 
-  // PRIMARY: Anthropic Claude (best quality, no daily token cap)
-  if (anthropic) {
-    // Always use Sonnet — best for both tool-calling and plain text
-    const claudeModel = 'claude-sonnet-4-5';
-    try {
-      console.log(`🧠 Claude PRIMARY → ${claudeModel}`);
-      return await callClaude(messages, temperature, claudeModel, tools);
-    } catch (err) {
-      const detail = `[Claude/${claudeModel}] ${err.message}`;
-      console.warn(`❌ ${detail}`);
-      providerErrors.push(detail);
+  // 🟢 PRIMARY 1: NVIDIA NIM (High Performance Llama 3.3 70B / Mistral Large 2 / DeepSeek R1)
+  if (process.env.NVIDIA_API_KEY) {
+    const nvidiaModels = [
+      'meta/llama-3.1-70b-instruct',
+      'meta/llama-3.1-8b-instruct'
+    ];
+    for (const model of nvidiaModels) {
+      try {
+        console.log(`🟢 NVIDIA NIM PRIMARY → ${model}`);
+        return await callNvidia(messages, temperature, model, tools);
+      } catch (err) {
+        const detail = `[NVIDIA/${model}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+      }
     }
   }
 
-  // FALLBACK 1: OpenAI (gpt-4o-mini — fast & capable)
+  // 🚀 IMMEDIATE FALLBACK: OpenRouter (If NVIDIA fails or unavailable)
+  if (process.env.OPENROUTER_API_KEY) {
+    const openrouterModels = [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'meta-llama/llama-3.3-70b-instruct',
+      'google/gemini-2.0-flash-exp:free',
+      'deepseek/deepseek-r1:free'
+    ];
+    for (const model of openrouterModels) {
+      try {
+        console.log(`🚀 OpenRouter Fallback → ${model}`);
+        return await callOpenRouter(messages, temperature, model);
+      } catch (err) {
+        const detail = `[OpenRouter/${model}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+      }
+    }
+  }
+
+  // SECONDARY: Anthropic Claude
+  if (anthropic) {
+    const claudeModels = [
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-sonnet-latest',
+      'claude-3-5-sonnet-20240620',
+      'claude-3-haiku-20240307',
+      'claude-3-5-haiku-20241022',
+      'claude-3-5-haiku-latest'
+    ];
+    for (const claudeModel of claudeModels) {
+      try {
+        console.log(`🧠 Claude Fallback → ${claudeModel}`);
+        return await callClaude(messages, temperature, claudeModel, tools);
+      } catch (err) {
+        const detail = `[Claude/${claudeModel}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+        // Only try next model if it's a 404 / model not found error
+        const errMsg = err.message.toLowerCase();
+        if (!errMsg.includes('404') && !errMsg.includes('not_found') && !errMsg.includes('not found') && !errMsg.includes('model_not_found')) {
+          break;
+        }
+      }
+    }
+  }
+
+  // FALLBACK: Cerebras (using Cerebras SDK, ultra-fast and free)
+  if (cerebras) {
+    const cerebrasModels = ['llama-3.3-70b', 'llama3.1-8b'];
+    for (const model of cerebrasModels) {
+      try {
+        console.log(`🧠 Cerebras Fallback → ${model}`);
+        // Remove tools for Cerebras if they are passed, as Cerebras llama models may not support OpenAI tools format natively
+        const params = {
+          model,
+          messages: messages.map(m => ({ role: m.role, content: m.content || '' })),
+          temperature,
+          max_tokens: 2048
+        };
+        const completion = await cerebras.chat.completions.create(params);
+        const m = completion.choices[0].message;
+        if (m) {
+          return { text: m.content || '', tool_calls: null, model: `Cerebras (${model})` };
+        }
+      } catch (err) {
+        const detail = `[Cerebras/${model}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+      }
+    }
+  }
+
+  // FALLBACK 1: Google Gemini (Free API Key from Google AI Studio — ultra-fast)
+  if (process.env.GEMINI_API_KEY) {
+    const geminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    for (const model of geminiModels) {
+      try {
+        console.log(`✨ Google Gemini Fallback → ${model}`);
+        return await callGemini(messages, temperature, model);
+      } catch (err) {
+        const detail = `[Gemini/${model}] ${err.message}`;
+        console.warn(`❌ ${detail}`);
+        providerErrors.push(detail);
+      }
+    }
+  }
+
+  // FALLBACK 2: OpenAI (gpt-4o-mini — fast & capable) 
   if (OPENAI_API_KEY) {
     const openaiModel = tools ? 'gpt-4o' : 'gpt-4o-mini';
     try {
@@ -639,7 +820,7 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
     }
   }
 
-  // FALLBACK 2: Groq (fast, free-tier — kicks in if Claude + OpenAI fail)
+  // FALLBACK 3: Groq (fast, free-tier — kicks in if Claude + OpenAI fail)
   for (const [client, label, models] of [
     [groq, 'Groq', [groqModelId, GROQ_MODELS.default]],
     [groq2, 'Groq Key2', [groqModelId, GROQ_MODELS.default]]
@@ -661,7 +842,7 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
     }
   }
 
-  // FALLBACK 3: LLM Gateway (if it has credits)
+  // FALLBACK 4: LLM Gateway (if it has credits)
   if (process.env.LLM_GATEWAY_API_KEY) {
     const gatewayModelId = GATEWAY_MODELS[targetModel] || GATEWAY_MODELS.smart;
     try {
@@ -674,12 +855,107 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
     }
   }
 
+
   const summary = providerErrors.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
   console.error(`\n🚨 ALL PROVIDERS FAILED:\n${summary}\n`);
   throw new Error(`All AI providers failed:\n${summary}`);
 }
 
+// ─── SMART AGENT INTELLIGENCE HELPER FUNCTIONS ─────────────────────────────
+
+function storeUserFact(category = 'general', key, value) {
+  try {
+    const cat = category || 'general';
+    const stmt = db.prepare(`
+      INSERT INTO user_preferences (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?
+    `);
+    const fullKey = `fact_${cat}_${key}`;
+    stmt.run(fullKey, value, value);
+    console.log(`🧠 [Memory Stored] ${fullKey} = "${value}"`);
+    return `✅ Fact saved in Brahmand Memory [Category: ${cat}]: ${key} = "${value}"`;
+  } catch (err) {
+    return `❌ Failed to store fact in memory: ${err.message}`;
+  }
+}
+
+function getUserFacts(category = null) {
+  try {
+    const stmt = db.prepare(`SELECT key, value FROM user_preferences WHERE key LIKE 'fact_%'`);
+    const rows = stmt.all();
+    if (!rows || rows.length === 0) {
+      return "No custom user facts stored in long-term memory yet.";
+    }
+    const filtered = category 
+      ? rows.filter(r => r.key.startsWith(`fact_${category}_`))
+      : rows;
+    if (filtered.length === 0) {
+      return `No stored facts found for category '${category}'.`;
+    }
+    return filtered.map(r => `• ${r.key.replace(/^fact_[^_]+_/, '')}: ${r.value}`).join('\n');
+  } catch (err) {
+    return `Failed to retrieve user facts: ${err.message}`;
+  }
+}
+
+async function getViralContentIdeas(niche = 'general', targetAudience = 'India Hinglish') {
+  const prompt = [
+    {
+      role: 'system',
+      content: `You are Brahmand AI Viral Content Strategist. Generate 5 high-converting, viral Reel ideas for the niche: "${niche}" targeting audience: "${targetAudience}".
+Return a formatted JSON string with:
+{
+  "niche": "${niche}",
+  "viral_hooks": ["Hook 1...", "Hook 2...", "Hook 3..."],
+  "trending_concepts": [
+    { "title": "Concept 1", "visual_prompt": "...", "audio_vibe": "...", "script_hook": "..." }
+  ],
+  "recommended_hashtags": ["#tag1", "#tag2"],
+  "best_posting_times": ["6:00 PM IST", "9:00 PM IST"]
+}`
+    }
+  ];
+  try {
+    const res = await callLLM(prompt, 0.7, 'smart');
+    return res.text;
+  } catch (err) {
+    return JSON.stringify({ error: `Failed to generate viral ideas: ${err.message}` });
+  }
+}
+
+function getAgentAnalytics() {
+  try {
+    const msgCountRow = db.prepare('SELECT COUNT(*) as count FROM messages').get();
+    const prefCountRow = db.prepare('SELECT COUNT(*) as count FROM user_preferences').get();
+    
+    return JSON.stringify({
+      agent_name: "Brahmand AI Autonomous Agent",
+      status: "🟢 Operational & Smart Ready",
+      uptime: process.uptime() ? `${Math.floor(process.uptime() / 60)} minutes` : "Active",
+      database_analytics: {
+        total_messages_processed: msgCountRow ? msgCountRow.count : 0,
+        total_longterm_memories: prefCountRow ? prefCountRow.count : 0
+      },
+      ai_engine_health: {
+        primary_llm: process.env.NVIDIA_API_KEY ? "🟢 NVIDIA NIM Active" : "⚠️ NVIDIA Not Set",
+        primary_fallback: process.env.OPENROUTER_API_KEY ? "🚀 OpenRouter Active" : "⚠️ OpenRouter Not Set",
+        secondary_llm: process.env.ANTHROPIC_API_KEY ? "🧠 Anthropic Claude Active" : "⚠️ Anthropic Not Set"
+      },
+      active_intelligent_features: [
+        "Self-Healing Tool Execution & Automatic Failure Retry",
+        "Persistent Brand & Personal Fact Memory",
+        "Viral Reel Hook & Concept Intelligence Engine",
+        "Instagram & WhatsApp Automated Campaign Orchestration"
+      ]
+    }, null, 2);
+  } catch (err) {
+    return JSON.stringify({ error: err.message });
+  }
+}
+
 async function executeToolCall(toolCall, writeStreamChunk) {
+
   const functionName = toolCall.function.name;
   let args = {};
   if (toolCall.function.arguments) {
@@ -924,14 +1200,32 @@ Guidelines:
           message: checkResult.lastMessage ? "Last message in WhatsApp thread was sent by us. No reply needed." : "No chat history found."
         });
       }
+      case 'store_user_fact':
+        return storeUserFact(args.category, args.key, args.value);
+      case 'get_user_facts':
+        return getUserFacts(args.category);
+      case 'get_viral_content_ideas':
+        return await getViralContentIdeas(args.niche, args.targetAudience);
+      case 'get_agent_analytics':
+        return getAgentAnalytics();
       default:
         return `Error: Unknown function ${functionName}`;
     }
   } catch (error) {
-    console.error(`Error executing ${functionName}:`, error);
+    console.error(`⚠️ [Self-Healing Engine] Error executing ${functionName}:`, error.message);
+    // Self-Healing Auto-Repair for video generation or web search
+    if (functionName === 'generate_video' && args.model !== 'wan') {
+      console.log(`🔄 [Self-Healing Retry] Retrying video generation with fallback model 'wan'...`);
+      try {
+        return await generatePollinationsVideo(args.prompt, args.duration || 12, 'wan', args.aspectRatio || '9:16', args.audio || false);
+      } catch (retryErr) {
+        return `Error executing tool: ${retryErr.message}`;
+      }
+    }
     return `Error executing tool: ${error.message}`;
   }
 }
+
 
 async function runAgentLoop(messages, temperature, modelName, writeStreamChunk) {
   const maxIterations = 5;
@@ -1469,6 +1763,84 @@ app.post('/api/revise', async (req, res) => {
     console.error("Background Revision Error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 🩺 Health check & service status check
+app.get('/api/status', async (req, res) => {
+  const osModule = import('os');
+  
+  let internetConnection = false;
+  try {
+    const netRes = await fetch('https://www.google.com', { method: 'HEAD', timeout: 3000 }).catch(() => null);
+    if (netRes && netRes.ok) internetConnection = true;
+  } catch (err) {
+    // network check failed
+  }
+
+  // Detect local Chrome path
+  const chromePaths = [
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    path.join(process.env.LOCALAPPDATA || '', "Google/Chrome/Application/chrome.exe")
+  ];
+  let chromePath = null;
+  for (const p of chromePaths) {
+    if (fs.existsSync(p)) {
+      chromePath = p;
+      break;
+    }
+  }
+
+  const status = {
+    system: {
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      platform: process.platform,
+      internetConnected: internetConnection,
+      chromeInstalled: !!chromePath,
+      chromePath: chromePath
+    },
+    database: {
+      memoryDb: { active: false, writable: false, error: null }
+    },
+    apiKeys: {
+      anthropic: !!process.env.ANTHROPIC_API_KEY,
+      openai: !!process.env.OPENAI_API_KEY,
+      groq: !!process.env.GROQ_API_KEY,
+      cerebras: !!process.env.CEREBRAS_API_KEY,
+      nvidia: !!process.env.NVIDIA_API_KEY,
+      pollinations: !!process.env.POLLINATIONS_API_KEY,
+      maxun: !!process.env.MAXUN_API_KEY || !!process.env.MAXUN_API_KEY_2
+    },
+    sessions: {
+      instagram: {
+        credentialsConfigured: !!process.env.IG_USERNAME && !!process.env.IG_PASSWORD,
+        sessionFileExists: fs.existsSync(path.join(path.join(process.env.USERPROFILE || process.env.HOME || '', ".brahmand-ig-session"), "cookies.json"))
+      },
+      whatsapp: {
+        sessionDirectoryExists: fs.existsSync(path.join(path.join(process.env.USERPROFILE || process.env.HOME || '', ".brahmand-wa-session")))
+      },
+      twitter: {
+        sessionFileExists: fs.existsSync(path.join(path.join(process.env.USERPROFILE || process.env.HOME || '', ".brahmand-tw-session"), "cookies.json"))
+      }
+    }
+  };
+
+  // Test read/write on DB
+  try {
+    const testQuery = db.prepare('SELECT 1').get();
+    if (testQuery) {
+      status.database.memoryDb.active = true;
+      // Try to write and delete
+      db.prepare("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('__status_test__', '1')").run();
+      db.prepare("DELETE FROM user_preferences WHERE key = '__status_test__'").run();
+      status.database.memoryDb.writable = true;
+    }
+  } catch (err) {
+    status.database.memoryDb.error = err.message;
+  }
+
+  res.json({ success: true, status });
 });
 
 // 🌟 API to fetch the latest planned Reel JSON structure for preview
@@ -2011,6 +2383,12 @@ app.post('/api/chat', async (req, res) => {
       memoryContextPrompt += `\n- Length preference: The user has previously preferred ${prefLength} responses. Adjust length accordingly.`;
     }
 
+    const storedFacts = getUserFacts();
+    if (storedFacts && !storedFacts.includes('No custom user facts')) {
+      memoryContextPrompt += `\n- SAVED LONG-TERM MEMORIES & FACTS:\n${storedFacts}`;
+    }
+
+
     const currentTopic = smartController.extractTopic(message);
     if (currentTopic !== 'unknown') {
       if (lastTopic === currentTopic && lastTopicTime && (Date.now() - parseInt(lastTopicTime, 10) < 24 * 60 * 60 * 1000)) {
@@ -2193,6 +2571,44 @@ CRITICAL CONSTRAINTS — DO NOT VIOLATE:
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 Brahmand Smart Decision Agent running on http://localhost:${PORT}`);
+  
+  /*
+  // Start background auto-reply loop for Instagram
+  const targetUser = process.env.AUTO_REPLY_TARGET || getPreference('auto_reply_target');
+  if (!targetUser) {
+    console.log(`🤖 Background Auto-Reply Monitor: No target user configured. To enable, please set AUTO_REPLY_TARGET in your .env file or 'auto_reply_target' in preferences.`);
+  } else {
+    console.log(`🤖 Background Auto-Reply Monitor starting for target: @${targetUser}`);
+    
+    let lastSeenIgMessage = null;
+    
+    setInterval(async () => {
+      try {
+        console.log(`🔄 [Poll] Checking Instagram messages for @${targetUser}...`);
+        const res = await getLatestIncomingInstagramMessage(targetUser);
+        if (res && res.lastMessage) {
+          const { lastMessage, isIncoming } = res;
+          if (isIncoming && lastMessage !== lastSeenIgMessage) {
+            console.log(`📥 New incoming IG message from @${targetUser}: "${lastMessage}"`);
+            
+            const prompt = `
+Write a polite, warm, and brief Hinglish reply to: "${lastMessage}"
+Introduce the premium Sanatan/heritage app "Brahmand". Keep it under 2 sentences.
+Website: https://brahmand.app
+`;
+            const replyText = await askLLM(prompt, 300);
+            console.log(`📤 Sending auto-reply: "${replyText.trim()}"`);
+            await sendInstagramMessage(targetUser, replyText.trim());
+            lastSeenIgMessage = lastMessage;
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Background IG poller warning:", err.message);
+      }
+    }, 25000); // Check every 25 seconds
+  }
+  */
+
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.log(`\n❌ Port ${PORT} is already in use! Another instance of Brahmand AI Agent is already running.`);
