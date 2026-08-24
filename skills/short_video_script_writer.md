@@ -1,21 +1,34 @@
-# REELS & SHORTS VIDEO SCRIPTWRITING SKILL
+# REELS & SHORTS VIDEO SCRIPTWRITING SKILL — BRAHMAND AI MASTER SPECIFICATION
 
 ## Objective
-Create viral, high-retention 15-to-30-second short-video scripts (Instagram Reels, YouTube Shorts, AI Video Generators like Luma / Runway Gen-3).
+Create viral, high-retention 15-to-45-second short-video scripts (Instagram Reels, YouTube Shorts) aligned with Content DNA, dynamic user interest clusters, and contextual Brahmand feature integration.
 
-## Video Script Framework
+## Scriptwriting Process (14-Step Flow):
+1. Understand Target Audience.
+2. Select Interest Cluster (e.g. Shiva, Temple History, Mantra, Sanatan Science).
+3. Select Dharmic / Historical / Spiritual Topic.
+4. Select Angle (Mystery, History, Unknown Fact, Myth vs Fact, Story, Spiritual Meaning, Festival, Problem → Solution).
+5. Create 0-3s Hook.
+6. Create 30-45s Retention Script.
+7. Create Timestamped Narration.
+8. Create Scene-by-Scene Visual Direction.
+9. Create Cinematic Image Prompts (8k photorealistic DSLR).
+10. Integrate Brahmand Feature Contextually (Educational first, promotional second).
+11. Create Caption.
+12. Create Hashtags and Semantic Keywords.
+13. Create Content DNA Metadata.
+14. Explain Audience Appeal Rationale.
 
-### 1. Scene Structure Table
-Every video script MUST be presented as a structured table with 4 columns:
+## Video Script Framework:
 
 | Time | Visual / Camera Angle | Voiceover / Audio Script | On-Screen Text / Overlay |
 |---|---|---|---|
-| 00:00 - 00:03 | **Hook Visual**: Dynamic camera pan / fast motion | Urgent / Catchy opening line | Bold Hook Text |
-| 00:03 - 00:15 | **Problem / Story**: B-roll transition | Relatable narrative or value | Subtle subtitles |
-| 00:15 - 00:25 | **Solution / Offer**: Product/Festival reveal | Main marketing message | Key offer highlight |
-| 00:25 - 00:30 | **CTA Scene**: Brand logo with transition | "Link in bio to claim" | "Tap Link Below" |
+| 00:00 - 00:03 | **Hook Visual**: Dynamic camera pan / fast motion | Urgent / Curious opening line | Bold Hook Text |
+| 00:03 - 00:20 | **Story / History / Mystery**: B-roll transition | Relatable historical narrative | Key facts subtitles |
+| 00:20 - 00:35 | **Spiritual Value / Meaning**: Atmospheric reveal | Scriptural insight | Value highlight |
+| 00:35 - 00:45 | **Brahmand Feature & CTA**: Contextual feature reveal | Natural CTA | Download / Explore |
 
-### 2. AI Video Generation Prompt Rules (Runway Gen-3 / Luma)
-Provide a 1-sentence prompt for AI video generators:
-- Focus on camera movement: *"Cinematic slow pan right, warm golden hour lighting, 4k resolution, 60fps, fluid motion."*
-- Avoid static images; specify action or motion in every prompt.
+## AI Visual Prompt Rules (8K Photorealistic):
+- *Devotional*: "ultra-realistic hyperrealistic photograph, sacred Indian temple divine atmosphere, soft golden light, 8k DSLR, photorealistic"
+- *Historical*: "ultra-realistic hyperrealistic photograph, historical Indian warrior epic scene, dramatic lighting, 8k DSLR, photorealistic"
+- *Temple*: "ultra-realistic hyperrealistic photograph, ancient stone carvings and sanctum sanctorum, dramatic lighting, 8k DSLR, photorealistic"

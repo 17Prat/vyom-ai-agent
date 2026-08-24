@@ -22,6 +22,15 @@ import { generateCompleteReel } from './services/reelEngine.js';
 import { generateDynamicReel } from './services/dynamicReelEngine.js';
 import * as orchestrator from './utils/orchestrator.js';
 import { SmartResponseController } from './core/SmartResponseController.js';
+import { 
+  UserIntelligenceEngine, 
+  rankCandidateReels, 
+  buildContentDNA, 
+  formatMandatory17ReelOutput, 
+  BRAHMAND_FEATURE_BRAIN 
+} from './services/recommendationEngine.js';
+
+const userIntelligence = new UserIntelligenceEngine();
 
 // Track last generated image URL across tool calls within the same request
 let _lastGenImageUrl = null;
@@ -240,9 +249,63 @@ function saveWebsitePreview(sessionId, aiResponseText) {
   return null;
 }
 
-const DECISION_SYSTEM_PROMPT = `Tu Brahmand AI hai. Tu Brahmand App ka official AI Assistant hai.
+const DECISION_SYSTEM_PROMPT = `Tu Brahmand AI hai — Brahmand App ka official Content Intelligence, Personalized Recommendation Agent aur Reel Creation Assistant.
 
-Tera kaam: User ke sawal ka sahi jawab dena, user ke topic ke hisaab se sahi feature recommend karna, aur conversation ko naturally aage badhana.
+---
+
+# 🧠 BRAHMAND AI MASTER SYSTEM DIRECTIVES
+
+## 1. CORE OBJECTIVE
+Understand Content (Content DNA) → Understand User (Dynamic Interests) → Learn from User Behaviour → Find Best Match → Maintain Content Diversity (55/20/15/10 Mix) → Learn Continuously.
+
+## 2. CONTENT INTELLIGENCE (CONTENT DNA)
+Har reel aur post ka semantic Content DNA identify karo:
+- Primary & Secondary Topics, Entities, Deities, Temples, Historical/Mythological/Spiritual references.
+- Content Type, Emotional Tone, Knowledge Level, Related Topics, Related Brahmand Features.
+
+## 3. DYNAMIC USER INTELLIGENCE
+User ke interests dynamically track aur adjust karo across 3 levels:
+- **Short-Term Interest**: Current session activity & cluster detection.
+- **Recent Interest**: Shorter time window (last several days).
+- **Long-Term Interest**: Stable historical baseline.
+- Progressive confidence: Single positive signal = small increase, repeated positive = high confidence, explicit negative/skip = score reduction.
+
+## 4. INTEREST GRAPH & DIVERSITY CONTROL (55/20/15/10 MIX)
+- Topic relationship expansion (e.g., Shiva → Jyotirlinga, Kashi, Somnath, Temple History, Mantra, Mahashivratri).
+- Recommend SIMILAR INTEREST, not IDENTICAL CONTENT.
+- Mix strategy: 55% Strong Match, 20% Closely Related Topics, 15% Exploration, 10% Fresh/Strategic Content.
+- Anti-Monotony Rule: Avoid consecutive identical topic recommendations.
+
+## 5. CONTEXTUAL BRAHMAND FEATURE MATCHING
+Features (Live Jaap Counter, Mantra Library, Temple Finder, Live Darshan, AI Jyotish/Kundli, Daily Sadhana, SOS Emergency) ko contextually introduce karo. Educational first, promotional second.
+
+## 6. MANDATORY 17 REEL OUTPUT COMPONENTS
+Jab user reel create karne bole, exact in 17 steps format mein return karo:
+1. Reel Title
+2. Target Audience
+3. Primary Interest Cluster
+4. Content Objective
+5. Hook (0–3s)
+6. Total Duration
+7. Full Narration Script with timestamps
+8. Scene-by-Scene Breakdown
+9. Cinematic Image Prompt for each scene
+10. On-Screen Text
+11. Brahmand Feature Integration
+12. CTA
+13. Instagram Caption
+14. Relevant Hashtags
+15. Content DNA / Tags
+16. Why this reel should appeal to the selected audience
+17. Structured JSON representation
+
+## 7. TIME-OF-DAY SPIRITUAL CONTEXT
+User ke current time ke target context ke hisaab se tone tune karo:
+- **Brahma Muhurat (4 AM - 6 AM)**: Meditation, Mantras, Daily Sadhana, Japa.
+- **Morning Aarti (6 AM - 10 AM)**: Live Darshan, Aarti, Morning Prayers, Temple Finder.
+- **Day Wisdom (10 AM - 5 PM)**: Temple Mysteries, History, Sanatan Science, Gita.
+- **Evening Devotion (5 PM - 9 PM)**: Stotrams, Devotional Songs, Evening Aarti.
+- **Night Mystery (9 PM - 4 AM)**: Ancient Secrets, Deep History, Jyotish/Kundli, Epic Lore.
 
 ---
 
@@ -1082,21 +1145,27 @@ async function executeToolCall(toolCall, writeStreamChunk) {
           const replyPrompt = [
             {
               role: 'system',
-              content: `You are Brahmand (ब्रह्मांड), an ultra-intelligent, friendly, and highly empathetic AI assistant.
-You are chatting with a user named @${args.username} on Instagram direct messages.
-Here is the recent chat history between you and @${args.username}:
+              content: `Tu Brahmand (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+Tu @${args.username} ke saath Instagram Direct Messages par baat kar raha hai.
 
-${formattedHistory}
+🔥 TOPIC → FEATURE MAPPING & LINKS:
+- Chanting/Mantra/Jaap → Live Jaap Counter & Mantra Library
+- Temple/Mandir → Temple Finder & Live Darshan
+- Spiritual/Jyotish/Kundli → AI Jyotish & Kundli Generator
+- Emergency/Help/SOS/Blood → SOS Emergency Network & Sanatan Passport
+- Download/App Link → Play Store: https://play.google.com/store/apps/details?id=com.brahmand.app | App Store: https://apps.apple.com/app/brahmand-app/id6765467224
 
-Generate a direct, natural, friendly, and highly contextual reply to send back to @${args.username}.
-Guidelines:
+GUIDELINES:
 - Analyze the user's emotion, intent, and tone from their last message.
-- Think deeply and respond contextually ("soch samajh ke natural response do").
-- Respond in natural, conversational Hinglish (a warm mix of Hindi and English written in Latin script) matching the user's dialect.
+- Respond in natural, conversational Hinglish (a warm mix of Hindi and English written in Latin script).
 - Keep it natural, short, and conversational (exactly like a human would chat on DM).
-- **MEDIA ATTACHMENT RULE:** If the user EXPLICITLY asks you to send them a photo, picture, image, or video (e.g. "photo bhej", "send a picture", "video dikha"), you can trigger a media send by appending "[MEDIA: image_generation_prompt]" at the end of your response text (where image_generation_prompt is a description of the image to generate). If they did NOT ask for a photo or video, do NOT include the [MEDIA: ...] tag under any circumstance.
+- **MEDIA ATTACHMENT RULE:** If the user EXPLICITLY asks you to send them a photo, picture, image, or video (e.g. "photo bhej", "send a picture", "video dikha"), trigger a media send by appending "[MEDIA: image_generation_prompt]" at the end of your response text (where image_generation_prompt is a description of the image to generate). If they did NOT ask for a photo or video, do NOT include the [MEDIA: ...] tag under any circumstance.
 - Do NOT output any system tags, explanations, quotes, or conversational headers.
 - Output ONLY the raw message text to send.`
+            },
+            {
+              role: 'user',
+              content: `Recent DM chat history with @${args.username}:\n${formattedHistory}\n\nLatest message from @${args.username}: "${checkResult.lastMessage}". Respond to @${args.username} naturally.`
             }
           ];
           const llmRes = await callLLM(replyPrompt, 0.5, 'smart');
@@ -1162,36 +1231,61 @@ Guidelines:
           const replyPrompt = [
             {
               role: 'system',
-              content: `You are Brahmand (ब्रह्मांड), an ultra-intelligent, friendly, and highly empathetic AI assistant.
-You are chatting with a WhatsApp contact named "${args.recipient}".
-Here is the recent chat history between you and "${args.recipient}":
+              content: `Tu Brahmand (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+Tu WhatsApp contact "${args.recipient}" ke saath chat kar raha hai.
 
-${formattedHistory}
+🔥 TOPIC → FEATURE MAPPING & LINKS:
+- Chanting/Mantra/Jaap → Live Jaap Counter & Mantra Library
+- Temple/Mandir → Temple Finder & Live Darshan
+- Spiritual/Jyotish/Kundli → AI Jyotish & Kundli Generator
+- Emergency/Help/SOS/Blood → SOS Emergency Network & Sanatan Passport
+- Download/App Link → Play Store: https://play.google.com/store/apps/details?id=com.brahmand.app | App Store: https://apps.apple.com/app/brahmand-app/id6765467224
 
-Generate a direct, natural, friendly, and highly contextual reply to send back to "${args.recipient}" over WhatsApp.
-Guidelines:
-- Analyze their last message.
-- If they ask about "Brahmand App" (or how to download/features), explain it beautifully and share the features/links (Play Store: https://play.google.com/store/apps/details?id=com.brahmand.app , App Store: https://apps.apple.com/app/brahmand-app/id6765467224).
+GUIDELINES:
+- Analyze their last message and respond contextually.
 - Respond in natural, conversational Hinglish (warm mix of Hindi/English).
 - Keep it natural, short, and conversational.
+- **MEDIA ATTACHMENT RULE:** If the user EXPLICITLY asks for a photo, picture, or image (e.g. "photo bhej", "send image"), append "[MEDIA: image_description]" at the end. Otherwise do NOT include [MEDIA: ...].
 - Do NOT output any system tags, explanations, quotes, or conversational headers.
 - Output ONLY the raw message text to send.`
+            },
+            {
+              role: 'user',
+              content: `Recent WhatsApp chat history with "${args.recipient}":\n${formattedHistory}\n\nLatest message from "${args.recipient}": "${checkResult.lastMessage}". Respond naturally.`
             }
           ];
           const llmRes = await callLLM(replyPrompt, 0.5, 'smart');
           let generatedReply = llmRes.text.trim().replace(/^"+|"+$/g, "");
 
-          console.log(`Generated WhatsApp reply: "${generatedReply}". Sending via WhatsApp...`);
+          let mediaUrl = null;
+          const mediaRegex = /\[MEDIA:\s*(.*?)\]/i;
+          const mediaMatch = generatedReply.match(mediaRegex);
+          if (mediaMatch && mediaMatch[1]) {
+            const mediaPromptText = mediaMatch[1].trim();
+            console.log(`[WhatsApp Media Request Detected] Generating image: "${mediaPromptText}"`);
+            if (writeStreamChunk) {
+              writeStreamChunk({ type: 'status', text: `Generating requested photo: "${mediaPromptText}"...` });
+            }
+            try {
+              mediaUrl = await generatePosterImage(mediaPromptText);
+            } catch (imgErr) {
+              console.error("Failed to generate image for WhatsApp auto-reply:", imgErr.message);
+            }
+            generatedReply = generatedReply.replace(mediaRegex, "").trim();
+          }
+
+          console.log(`Generated WhatsApp reply: "${generatedReply}". Sending via WhatsApp (Media: ${mediaUrl || 'None'})...`);
           if (writeStreamChunk) {
             writeStreamChunk({ type: 'status', text: `Sending WhatsApp reply to "${args.recipient}"...` });
           }
-          const sendRes = await sendWhatsappMessage(args.recipient, generatedReply);
+          const sendRes = await sendWhatsappMessage(args.recipient, generatedReply, mediaUrl);
           return JSON.stringify({
             success: true,
             checkedRecipient: args.recipient,
             receivedMessage: checkResult.lastMessage,
             sentReply: generatedReply,
-            sendResult: JSON.parse(sendRes)
+            mediaAttached: mediaUrl,
+            sendResult: typeof sendRes === 'string' ? JSON.parse(sendRes) : sendRes
           });
         }
         return JSON.stringify({
@@ -1208,6 +1302,38 @@ Guidelines:
         return await getViralContentIdeas(args.niche, args.targetAudience);
       case 'get_agent_analytics':
         return getAgentAnalytics();
+      case 'recommend_content': {
+        const userId = args.userId || 'default_user';
+        const userCtx = userIntelligence.getUserContext(userId);
+        const candidates = (args.candidateTopics || ["Kashi Vishwanath Mystery", "Somnath Temple History", "Hare Krishna Mantra", "Kundli AI Astrologer", "Daily Sadhana Routine", "Ayodhya Ram Mandir"]).map((topic, i) => ({
+          id: `reel_${i+1}`,
+          title: topic,
+          topic
+        }));
+        const ranked = rankCandidateReels(userId, candidates, userCtx, { limit: args.limit || 5 });
+        return JSON.stringify({ userId, userContext: userCtx, recommendations: ranked }, null, 2);
+      }
+      case 'record_user_signal': {
+        userIntelligence.recordInteractionSignal(
+          args.userId || 'default_user',
+          args.reelId || 'reel_gen',
+          args.topics || [],
+          {
+            completion_pct: args.completionPct || 0.8,
+            is_like: args.isLike,
+            is_save: args.isSave,
+            is_share: args.isShare,
+            is_skip: args.isSkip,
+            is_not_interested: args.isNotInterested
+          }
+        );
+        const updatedCtx = userIntelligence.getUserContext(args.userId || 'default_user');
+        return JSON.stringify({ success: true, updatedProfile: updatedCtx.topInterests });
+      }
+      case 'extract_content_dna': {
+        const dna = buildContentDNA({ primary_topic: args.topic, secondary_topics: args.details ? [args.details] : [] });
+        return JSON.stringify(dna, null, 2);
+      }
       default:
         return `Error: Unknown function ${functionName}`;
     }

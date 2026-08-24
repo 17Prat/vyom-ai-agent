@@ -385,6 +385,88 @@ export const toolsDefinition = [
         required: []
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "recommend_content",
+      description: "Ranks candidate reel content for a personalized user feed using Content DNA, dynamic user interest scoring (55/20/15/10 mix), interest graph expansion, and anti-monotony control.",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "string",
+            description: "Unique ID of the user (defaults to 'default_user')."
+          },
+          candidateTopics: {
+            type: "array",
+            items: { type: "string" },
+            description: "List of candidate reel topics to rank."
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of recommended reels to return (default 5)."
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "record_user_signal",
+      description: "Records user behavioural watch signals (watch time, completion %, replay, like, save, share, skip, not interested) to update dynamic user interest profile.",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "string",
+            description: "Unique user ID."
+          },
+          reelId: {
+            type: "string",
+            description: "Reel or content ID."
+          },
+          topics: {
+            type: "array",
+            items: { type: "string" },
+            description: "Topics associated with the content."
+          },
+          completionPct: {
+            type: "number",
+            description: "Watch completion percentage (0.0 to 1.0)."
+          },
+          isLike: { type: "boolean" },
+          isSave: { type: "boolean" },
+          isShare: { type: "boolean" },
+          isSkip: { type: "boolean" },
+          isNotInterested: { type: "boolean" }
+        },
+        required: ["userId", "topics"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "extract_content_dna",
+      description: "Extracts semantic Content DNA (Primary/Secondary topics, Deities, Temples, Content Type, Emotional Tone, Related Features) for a reel or topic.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: {
+            type: "string",
+            description: "Primary topic or title of the content."
+          },
+          details: {
+            type: "string",
+            description: "Optional script or narration details."
+          }
+        },
+        required: ["topic"]
+      }
+    }
   }
 ];
 
