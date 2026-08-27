@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brahmand</title>
+  <title>Nakshatra</title>
   <link rel="icon" type="image/jpeg" href="/appicon.jpeg">
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -346,8 +346,26 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      border: none;
+    .plus-circle-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: #f4f4f5;
+      color: #333333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: 1px solid #e4e4e7;
       flex-shrink: 0;
+      margin-right: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .plus-circle-btn:hover {
+      background-color: #e4e4e7;
+      color: #000000;
+      transform: scale(1.05);
     }
 
     /* ─── SUGGESTION CHIPS ─── */
@@ -437,7 +455,7 @@
       <!-- Top Header -->
       <header class="top-header">
         <div class="brand-title" onclick="resetToHome()">
-          Brahmand <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: #666;"></i>
+          Nakshatra <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: #666;"></i>
         </div>
 
         <div class="top-header-right">
@@ -461,7 +479,19 @@
       <!-- Sticky Bottom Input Bar -->
       <div class="input-section">
         <div class="pill-input-wrapper">
-          <textarea class="pill-textarea" id="userInput" placeholder="Ask anything" rows="1" onkeydown="handleKeyDown(event)"></textarea>
+          <!-- Plus (+) Attachment Button (ChatGPT Style) -->
+          <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileUpload(event)">
+          <button class="plus-circle-btn" id="plusBtn" type="button" onclick="triggerFileInput()" title="Attach photo or screenshot">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+          
+          <!-- Image Attachment Preview Thumbnail Container -->
+          <div id="imagePreviewContainer" style="display: none; position: relative; margin-right: 8px;">
+            <img id="attachedImageThumbnail" src="" style="width: 36px; height: 36px; object-fit: cover; border-radius: 8px; border: 1.5px solid #d4af37;">
+            <button onclick="clearAttachedImage()" style="position: absolute; top: -6px; right: -6px; background: #ff4d4d; color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
+          </div>
+
+          <textarea class="pill-textarea" id="userInput" placeholder="Ask anything..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
           <button class="black-circle-btn" id="sendBtn" onclick="sendMessage()">
             <i class="fa-solid fa-arrow-up"></i>
           </button>
@@ -474,8 +504,33 @@
 
   <script>
     let currentSessionId = null;
-    let sessions = JSON.parse(localStorage.getItem('brahmand_sessions') || '[]');
+    let sessions = JSON.parse(localStorage.getItem('nakshatra_sessions') || '[]');
     let activeAbortController = null;
+    let currentAttachedImageData = null;
+
+    function triggerFileInput() {
+      document.getElementById('fileInput').click();
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        currentAttachedImageData = e.target.result;
+        document.getElementById('attachedImageThumbnail').src = currentAttachedImageData;
+        document.getElementById('imagePreviewContainer').style.display = 'inline-block';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearAttachedImage() {
+      currentAttachedImageData = null;
+      document.getElementById('attachedImageThumbnail').src = '';
+      document.getElementById('imagePreviewContainer').style.display = 'none';
+      document.getElementById('fileInput').value = '';
+    }
 
     function setGeneratingState(isGenerating) {
       const sendBtn = document.getElementById('sendBtn');
@@ -632,47 +687,80 @@
 
     async function sendMessage() {
       const input = document.getElementById('userInput');
-      const message = input.value.trim();
-      if (!message) return;
+      const textMessage = input.value.trim();
+      const attachedImg = currentAttachedImageData;
+      
+      if (!textMessage && !attachedImg) return;
 
-      // Check if we already have a pre-loaded predictive cache hit
-      if (preloadedCacheMatch && preloadedCacheMatch.response_text) {
-        document.getElementById('heroContainer').style.display = 'none';
-        const feed = document.getElementById('activeChatContainer');
-        feed.style.display = 'flex';
-        
-        appendMessage(message, 'user');
-        input.value = '';
-        saveSessionMessage(currentSessionId, message, 'user');
-        
-        const cachedRes = preloadedCacheMatch;
-        preloadedCacheMatch = null; // Clear cache reference
-        
-        appendMessage(cachedRes.response_text, 'bot', cachedRes.model_name, cachedRes.image_url, false, message);
-        saveSessionMessage(currentSessionId, cachedRes.response_text, 'bot', cachedRes.model_name, cachedRes.image_url, false, message);
-        return;
-      }
+      const displayMessage = textMessage || '/meta';
+      const userPayloadMessage = textMessage || (attachedImg ? '/meta' : '');
 
       document.getElementById('heroContainer').style.display = 'none';
       const feed = document.getElementById('activeChatContainer');
       feed.style.display = 'flex';
 
-      appendMessage(message, 'user');
-      input.value = '';
+      // Display user message with attached thumbnail if present
+      if (attachedImg) {
+        appendMessage(displayMessage + `<br><img src="${attachedImg}" style="max-width: 220px; border-radius: 10px; margin-top: 8px; border: 1.5px solid #d4af37;">`, 'user');
+      } else {
+        appendMessage(displayMessage, 'user');
+      }
 
-      saveSessionMessage(currentSessionId, message, 'user');
+      input.value = '';
+      clearAttachedImage();
+
+      saveSessionMessage(currentSessionId, displayMessage, 'user');
 
       appendLoadingStatus('Initializing Smart Orchestrator...');
 
       activeAbortController = new AbortController();
       setGeneratingState(true);
 
+      // ⚡ Detect poster/meta request — use fast plain JSON endpoint, no streaming
+      const cleanPayload = userPayloadMessage.trim().toLowerCase();
+      const isPosterRequest = cleanPayload.startsWith('/meta') || cleanPayload.startsWith('meta') ||
+        cleanPayload.includes('poster') || (attachedImg && cleanPayload === '');
+
+      if (isPosterRequest) {
+        try {
+          updateLoadingStatus('🎨 Fetching Master Promotional Poster...');
+          const posterRes = await fetch('/api/poster', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: userPayloadMessage,
+              uploadedImage: attachedImg,
+              sessionId: currentSessionId
+            }),
+            signal: activeAbortController.signal
+          });
+          const data = await posterRes.json();
+          removeLoading();
+          if (data.error) {
+            appendMessage('❌ Poster Error: ' + data.error, 'bot');
+          } else {
+            appendMessage(data.message, 'bot', data.model, data.imageUrl, false, displayMessage);
+            try { saveSessionMessage(currentSessionId, data.message, 'bot', data.model, data.imageUrl, false, displayMessage); } catch(_) {}
+          }
+        } catch (posterErr) {
+          if (posterErr.name !== 'AbortError') {
+            removeLoading();
+            appendMessage('❌ Poster load failed. Please restart server and try again.', 'bot');
+          }
+        } finally {
+          setGeneratingState(false);
+          activeAbortController = null;
+        }
+        return;
+      }
+
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            message, 
+            message: userPayloadMessage,
+            uploadedImage: attachedImg,
             sessionId: currentSessionId
           }),
           signal: activeAbortController.signal
@@ -720,13 +808,36 @@
                 const isRevisionSuggested = chunk.revisionSuggested;
                 
                 appendMessage(contentText, 'bot', chunk.model, chunk.imageUrl, isRevisionSuggested, message);
-                saveSessionMessage(currentSessionId, contentText, 'bot', chunk.model, chunk.imageUrl, isRevisionSuggested, message, chunk.sessionTitle);
+                try {
+                  saveSessionMessage(currentSessionId, contentText, 'bot', chunk.model, chunk.imageUrl, isRevisionSuggested, message, chunk.sessionTitle);
+                } catch (e) {
+                  console.warn("History save warning:", e.message);
+                }
                 
                 if (chunk.averageLatencyMs) {
                   console.log('Response latency:', (chunk.averageLatencyMs / 1000).toFixed(1) + 's');
                 }
               }
             }
+          }
+        }
+
+        // ⚡ Parse any remaining trailing buffer chunk when stream closes
+        if (buffer && buffer.trim()) {
+          try {
+            const chunk = JSON.parse(buffer.trim());
+            if (chunk.type === 'done') {
+              removeLoading();
+              const contentText = chunk.message;
+              appendMessage(contentText, 'bot', chunk.model, chunk.imageUrl, chunk.revisionSuggested, message);
+              try {
+                saveSessionMessage(currentSessionId, contentText, 'bot', chunk.model, chunk.imageUrl, chunk.revisionSuggested, message, chunk.sessionTitle);
+              } catch (e) {
+                console.warn("History save warning:", e.message);
+              }
+            }
+          } catch (errBuf) {
+            console.warn("Trailing buffer parse note:", errBuf.message);
           }
         }
       } catch (err) {
@@ -744,22 +855,43 @@
     }
 
     function saveSessionMessage(sessId, text, sender, model = null, imageUrl = null, revisionSuggested = false, originalQuery = '', sessionTitle = null) {
-      let session = sessions.find(s => s.id === sessId);
-      if (!session) {
-        session = {
-          id: sessId,
-          title: sessionTitle || (text.length > 28 ? text.substring(0, 28) + '...' : text),
-          pinned: false,
-          messages: []
-        };
-        sessions.unshift(session);
-      } else if (sessionTitle && session.messages.length <= 2) {
-        // Update title if provided later on the first exchange
-        session.title = sessionTitle;
+      try {
+        let session = sessions.find(s => s.id === sessId);
+        if (!session) {
+          session = {
+            id: sessId,
+            title: sessionTitle || (text.length > 28 ? text.substring(0, 28) + '...' : text),
+            pinned: false,
+            messages: []
+          };
+          sessions.unshift(session);
+        } else if (sessionTitle && session.messages.length <= 2) {
+          session.title = sessionTitle;
+        }
+
+        // Strip heavy base64 data URLs to prevent localStorage QuotaExceededError
+        let cleanText = text;
+        if (typeof cleanText === 'string' && cleanText.includes('data:image/')) {
+          cleanText = cleanText.replace(/src="data:image\/[^"]+"/g, 'src="[Attached Photo]"');
+        }
+
+        session.messages.push({ text: cleanText, sender, model, imageUrl, revisionSuggested, originalQuery });
+        
+        try {
+          localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+        } catch (storageErr) {
+          console.warn("localStorage quota exceeded, clearing old sessions:", storageErr.message);
+          sessions = sessions.slice(0, 10);
+          try {
+            localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+          } catch (e2) {
+            console.warn("Could not save to localStorage:", e2.message);
+          }
+        }
+        renderSidebarChats();
+      } catch (err) {
+        console.error("saveSessionMessage error:", err.message);
       }
-      session.messages.push({ text, sender, model, imageUrl, revisionSuggested, originalQuery });
-      localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
-      renderSidebarChats();
     }
 
     function renderSidebarChats() {
@@ -805,14 +937,14 @@
       const s = sessions.find(item => item.id === id);
       if (s) {
         s.pinned = !s.pinned;
-        localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+        localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
         renderSidebarChats();
       }
     }
 
     async function deleteSession(id) {
       sessions = sessions.filter(s => s.id !== id);
-      localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+      localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
 
       try {
         await fetch(`/api/session/${id}`, { method: 'DELETE' });
@@ -1023,7 +1155,7 @@
                 break;
               }
             }
-            localStorage.setItem('brahmand_sessions', JSON.stringify(sessions));
+            localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
           }
         } else {
           if (panel) {
@@ -1330,7 +1462,7 @@
               <img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" />
               <div style="position: absolute; bottom: 15px; right: 15px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 4px 10px 4px 4px; border-radius: 30px; backdrop-filter: blur(4px);">
                 <img src="/appicon.jpeg" style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);" />
-                <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Brahmand AI</span>
+                <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Nakshatra AI</span>
               </div>
             </div>
           `;

@@ -61,14 +61,14 @@ try {
         const filePath = path.join(__dirname, file);
         if (fs.statSync(filePath).isFile()) {
           fs.unlinkSync(filePath);
-           console.log(`🧹 Deleted test file: ${file}`);
+          console.log(`🧹 Deleted test file: ${file}`);
         }
       } catch (e) {
         console.warn(`Failed to delete ${file}:`, e.message);
       }
     }
   });
-  
+
   // Clean temp folder on boot
   const tempPath = path.join(__dirname, 'temp');
   if (fs.existsSync(tempPath)) {
@@ -95,8 +95,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Serve previews folder statically
+// Serve previews and posters folders statically
 app.use('/previews', express.static(path.join(__dirname, 'public', 'previews')));
+app.use('/posters', express.static(path.join(__dirname, 'public', 'posters')));
+app.use('/posters', express.static(path.join(__dirname, 'BRAHMANDPOSTER')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 🗄️ SQLite Permanent Memory DB
@@ -188,8 +190,6 @@ if (OPENAI_API_KEY) {
   console.warn('⚠️  OPENAI_API_KEY not set — OpenAI fallback disabled.');
 }
 
-
-
 // Helper to determine if a query is dynamic/action-oriented and should bypass cache
 function shouldBypassCache(queryText) {
   if (!queryText) return true;
@@ -219,7 +219,7 @@ function loadSkills() {
     const files = fs.readdirSync(skillsDir);
     files.forEach((file) => {
       if (file.endsWith('.md')) {
-        combinedSkills += `\n\n--- SKILL/FRAMEWORK: ${file} ---\n` + fs.readFileSync(path.join(skillsDir, file), 'utf-8');
+        combinedSkills += '\n\n--- SKILL/FRAMEWORK: ' + file + ' ---\n' + fs.readFileSync(path.join(skillsDir, file), 'utf-8');
       }
     });
   }
@@ -230,7 +230,7 @@ function loadSkills() {
 function saveWebsitePreview(sessionId, aiResponseText) {
   if (!sessionId) return null;
   try {
-    const htmlRegex = /```html([\s\S]*?)```/i;
+    const htmlRegex = new RegExp('```html([\\s\\S]*?)```', 'i');
     const match = aiResponseText.match(htmlRegex);
     if (match && match[1]) {
       const htmlContent = match[1].trim();
@@ -241,7 +241,7 @@ function saveWebsitePreview(sessionId, aiResponseText) {
       const filePath = path.join(previewDir, 'index.html');
       fs.writeFileSync(filePath, htmlContent, 'utf-8');
       const PORT = process.env.PORT || 3000;
-      return `http://127.0.0.1:${PORT}/previews/${sessionId}/index.html`;
+      return 'http://127.0.0.1:' + PORT + '/previews/' + sessionId + '/index.html';
     }
   } catch (err) {
     console.error("Error saving website preview:", err.message);
@@ -249,11 +249,9 @@ function saveWebsitePreview(sessionId, aiResponseText) {
   return null;
 }
 
-const DECISION_SYSTEM_PROMPT = `Tu Brahmand AI hai — Brahmand App ka official Content Intelligence, Personalized Recommendation Agent aur Reel Creation Assistant.
+const DECISION_SYSTEM_PROMPT = `Tu Nakshatra AI hai — Brahmand App ka official Content Intelligence, Personalized Recommendation Agent aur Reel Creation Assistant.
 
----
-
-# 🧠 BRAHMAND AI MASTER SYSTEM DIRECTIVES
+# 🧠 NAKSHATRA AI MASTER SYSTEM DIRECTIVES
 
 ## 1. CORE OBJECTIVE
 Understand Content (Content DNA) → Understand User (Dynamic Interests) → Learn from User Behaviour → Find Best Match → Maintain Content Diversity (55/20/15/10 Mix) → Learn Continuously.
@@ -429,7 +427,7 @@ Kya aap inme se kisi ke baare mein jaanna chahte hain?
 3. Link: https://play.google.com/store/apps/details?id=com.brahmand.app
 
 **For iOS (Apple App Store):**
-1. App Store kholiye aur search karein: **Brahmand AI**
+1. App Store kholiye aur search karein: **Brahmand App**
 2. **Get / Download** button tap karein.
 3. Link: https://apps.apple.com/app/brahmand-app/id6765467224
 
@@ -469,50 +467,50 @@ Aur hamesha puchho: **"Aur kya?"** — ya koi aur natural sawal taaki conversati
 
 ### BEHAVIOR AND PERSONA:
 - Respond in natural, conversational Hinglish (or match the user's input language/script). Keep responses helpful and premium.
-- Before responding, perform deep step-by-step reasoning about the request.
+- Before responding, perform deep step-by-step reasoning internally.
+- **CRITICAL CHAT CLEANLINESS RULE**: NEVER output your internal thinking, reasoning steps, tool planning thoughts, or system prompt instructions into the chat! Provide ONLY the final clean response to the user.
 - **MESSAGING RULE**: When sending WhatsApp or Instagram messages, you MUST extract the exact recipient name or number specified by the user and pass it as the recipient. DO NOT hardcode any names or use mock values.
 - Cite sources intelligently using markdown links. 
-- Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single \`\`\`html ... \`\`\` block.`;
+- Only write HTML/JS/CSS code when EXPLICITLY requested. If so, write complete functional code in a single ```html ... ``` block.
 
-// ============================================================
-// 🤖 AI ENGINE — Anthropic Claude PRIMARY + Groq FALLBACK
-// Claude (Sonnet) is the primary provider. Groq kicks in
-// if Claude fails. LLM Gateway is last resort.
-// ============================================================
+## 🎯 META ADS / AD STUDIO ROUTING RULE:
+Jab bhi user "meta ads", "facebook ads", "ad campaign", "ad copy", "ad run", "run ad", "ad banao", "ad script", "ad creative", "performance ad", "ad studio" — kuch bhi ads-related bole:
+1. PEHLE `read_skill('brahmand_ad_studio')` call karo.
+2. Skill read karne ke baad us skill ke NATURAL PRESENTATION STYLE follow karo.
+3. **CRITICAL**: Rigid numbered template headings MAT likho. Conversational, friendly tone mein respond karo — jaise ek real creative strategist dost se baat karta hai.
+4. Agar user ne feature/audience specify nahi kiya toh PEHLE puchho — generate mat karo blindly.
+5. Poster generate karne ki zaroorat NAHI hai jab tak user explicitly "poster" na maange.
+6. NEVER route ad requests to the poster interceptor. Ads aur Posters bilkul alag hain.`;
 
-// Groq SDK model IDs (these actually work)
 const GROQ_MODELS = {
-  default:  'llama-3.1-8b-instant',      // Fast, reliable default
-  smart:    'llama-3.3-70b-versatile', // Emulating reasoning via prompt
-  code:     'qwen-2.5-coder-32b',        // Code specialist
-  creative: 'llama-3.3-70b-versatile', // Emulating reasoning via prompt
-  expert:   'llama-3.3-70b-versatile', // Emulating reasoning via prompt
-  fast:     'llama-3.1-8b-instant',      // Urgent / sub-second
+  default:  'qwen/qwen3.6-27b',        // Fast, reliable default with tool calling
+  smart:    'meta-llama/llama-3.3-70b-instruct', // Emulating reasoning via prompt
+  code:     'openai/gpt-oss-120b',     // Code specialist
+  creative: 'qwen/qwen3.6-27b',        // Emulating reasoning via prompt
+  expert:   'meta-llama/llama-3.3-70b-instruct', // Emulating reasoning via prompt
+  fast:     'qwen/qwen3.6-27b',        // Urgent / sub-second tool calling
 };
 
 // LLM Gateway model IDs — use exact model IDs from /v1/models list
 const GATEWAY_MODELS = {
-  default:  'gemini-2.5-flash',
-  smart:    'gemini-2.5-pro',
-  code:     'gemini-2.5-pro',
-  creative: 'gemini-2.5-pro',
-  expert:   'gemini-2.5-pro',
-  fast:     'gemini-2.5-flash',
+  default:  'gemini-1.5-flash',
+  smart:    'gemini-1.5-pro',
+  code:     'gemini-1.5-pro',
+  creative: 'gemini-1.5-pro',
+  expert:   'gemini-1.5-pro',
+  fast:     'gemini-1.5-flash',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Anthropic Claude API bridge
-// Converts OpenAI-style messages/tools ↔ Claude API format transparently.
 // ─────────────────────────────────────────────────────────────────────────────
 async function callClaude(messages, temperature, modelId, tools = null) {
-// 1. Split system message out (Claude takes it separately)
   let systemText = '';
   const userMessages = [];
   for (const msg of messages) {
     if (msg.role === 'system') {
       systemText += msg.content + '\n';
     } else if (msg.role === 'tool') {
-      // Convert OpenAI tool result → Claude tool_result content block
       userMessages.push({
         role: 'user',
         content: [{
@@ -522,7 +520,6 @@ async function callClaude(messages, temperature, modelId, tools = null) {
         }]
       });
     } else {
-      // assistant messages with tool_calls need conversion too
       if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
         const contentBlocks = [];
         if (msg.content) contentBlocks.push({ type: 'text', text: msg.content });
@@ -543,7 +540,6 @@ async function callClaude(messages, temperature, modelId, tools = null) {
     }
   }
 
- // 2. Convert OpenAI tools → Claude tools schema
   const claudeTools = tools ? tools
     .filter(t => t.type === 'function' && t.function)
     .map(t => ({
@@ -565,7 +561,6 @@ async function callClaude(messages, temperature, modelId, tools = null) {
 
   const response = await anthropic.messages.create(params);
 
-  // 3. Convert Claude response → OpenAI-style format
   let textContent = '';
   const toolCalls = [];
   for (const block of response.content) {
@@ -586,7 +581,7 @@ async function callClaude(messages, temperature, modelId, tools = null) {
   return {
     text: textContent,
     tool_calls: toolCalls.length > 0 ? toolCalls : null,
-    model: `Claude (${modelId})`
+    model: 'Claude (' + modelId + ')'
   };
 }
 
@@ -597,19 +592,18 @@ async function callGateway(messages, temperature, modelId, tools = null) {
     body.tools = tools;
     body.tool_choice = 'auto';
   }
-  
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.LLM_GATEWAY_API_KEY}`
+      'Authorization': 'Bearer ' + process.env.LLM_GATEWAY_API_KEY
     },
     body: JSON.stringify(body)
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Gateway ${res.status}: ${errText}`);
+    throw new Error('Gateway ' + res.status + ': ' + errText);
   }
 
   const data = await res.json();
@@ -618,11 +612,11 @@ async function callGateway(messages, temperature, modelId, tools = null) {
   return { 
     text: message.content || '', 
     tool_calls: message.tool_calls || null, 
-    model: `Gateway (${modelId})` 
+    model: 'Gateway (' + modelId + ')' 
   };
 }
 
-async function callGemini(messages, temperature, modelId = 'gemini-2.0-flash') {
+async function callGemini(messages, temperature, modelId = 'gemini-1.5-flash') {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
   
@@ -637,7 +631,7 @@ async function callGemini(messages, temperature, modelId = 'gemini-2.0-flash') {
     }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + modelId + ':generateContent?key=' + apiKey;
   const body = { contents, generationConfig: { temperature, maxOutputTokens: 2048 } };
   if (systemInstruction) body.systemInstruction = systemInstruction;
 
@@ -649,35 +643,35 @@ async function callGemini(messages, temperature, modelId = 'gemini-2.0-flash') {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Gemini ${res.status}: ${errText}`);
+    throw new Error('Gemini ' + res.status + ': ' + errText);
   }
 
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return { text, tool_calls: null, model: `Google Gemini (${modelId})` };
+  const text = data.candidates?.[0]?.content?.[0]?.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return { text, tool_calls: null, model: 'Google Gemini (' + modelId + ')' };
 }
 
 async function callOpenRouter(messages, temperature, modelId = 'meta-llama/llama-3.3-70b-instruct:free') {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
-   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Authorization': 'Bearer ' + apiKey
     },
     body: JSON.stringify({ model: modelId, messages, temperature, max_tokens: 2048 })
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`OpenRouter ${res.status}: ${errText}`);
+    throw new Error('OpenRouter ' + res.status + ': ' + errText);
   }
   const data = await res.json();
   const msg = data.choices?.[0]?.message;
-  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: `OpenRouter (${modelId})` };
+  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: 'OpenRouter (' + modelId + ')' };
 }
 
-async function callNvidia(messages, temperature, modelId = 'meta/llama-3.3-70b-instruct', tools = null) {
+async function callNvidia(messages, temperature, modelId = 'meta/llama-3.2-90b-vision-instruct', tools = null) {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey) throw new Error('NVIDIA_API_KEY not configured');
   const body = { model: modelId, messages, temperature, max_tokens: 2048 };
@@ -689,24 +683,20 @@ async function callNvidia(messages, temperature, modelId = 'meta/llama-3.3-70b-i
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Authorization': 'Bearer ' + apiKey
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(12000)
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`NVIDIA ${res.status}: ${errText}`);
+    throw new Error('NVIDIA ' + res.status + ': ' + errText);
   }
   const data = await res.json();
   const msg = data.choices?.[0]?.message;
-  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: `NVIDIA (${modelId})` };
+  return { text: msg?.content || '', tool_calls: msg?.tool_calls || null, model: 'NVIDIA (' + modelId + ')' };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OpenAI API bridge (fetch-based — no extra npm package needed)
-// Converts our standard messages/tools format to OpenAI API directly.
-//  ─────────────────────────────────────────────────────────────────────────────
 async function callOpenAI(messages, temperature, modelId = 'gpt-4o-mini', tools = null) {
   const body = {
     model: modelId,
@@ -718,19 +708,18 @@ async function callOpenAI(messages, temperature, modelId = 'gpt-4o-mini', tools 
     body.tools = tools;
     body.tool_choice = 'auto';
   }
-
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
+      'Authorization': 'Bearer ' + OPENAI_API_KEY
     },
     body: JSON.stringify(body)
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`OpenAI ${res.status}: ${errText}`);
+    throw new Error('OpenAI ' + res.status + ': ' + errText);
   }
 
   const data = await res.json();
@@ -740,7 +729,7 @@ async function callOpenAI(messages, temperature, modelId = 'gpt-4o-mini', tools 
   return {
     text: msg.content || '',
     tool_calls: msg.tool_calls || null,
-    model: `OpenAI (${modelId})`
+    model: 'OpenAI (' + modelId + ')'
   };
 }
 
@@ -748,94 +737,114 @@ async function callLLM(messages, temperature = 0.3, targetModel = 'auto', tools 
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
-      console.log(`🔄 Retry ${attempt}/${maxRetries} for LLM call...`);
+      console.log('🔄 Retry ' + attempt + '/' + maxRetries + ' for LLM call...');
       await new Promise(r => setTimeout(r, attempt * 1000));
     }
     try {
       return await callLLMOnce(messages, temperature, targetModel, tools);
     } catch (err) {
-      console.warn(`LLM attempt ${attempt + 1} failed: ${err.message}`);
+      console.warn('LLM attempt ' + (attempt + 1) + ' failed: ' + err.message);
       if (attempt === maxRetries) throw err;
-    } 
+    }
   }
 }
 
 async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', tools = null) {
   const groqModelId = GROQ_MODELS[targetModel] || GROQ_MODELS.smart;
-  const providerErrors = []; // collect all failure details
+  const providerErrors = [];
 
-  // 🟢 PRIMARY 1: NVIDIA NIM (High Performance Llama 3.3 70B / Mistral Large 2 / DeepSeek R1)
-  if (process.env.NVIDIA_API_KEY) {
-    const nvidiaModels = [
-      'meta/llama-3.1-70b-instruct',
-      'meta/llama-3.1-8b-instruct'
-    ];
+  // 1. Groq (PRIMARY - Ultra-Fast 200ms Sub-Second Response)
+  for (const [client, label, models] of [
+    [groq, 'Groq', [groqModelId, GROQ_MODELS.default, 'qwen/qwen3.6-27b', 'meta-llama/llama-3.3-70b-instruct', 'openai/gpt-oss-120b']],
+    [groq2, 'Groq Key2', [groqModelId, GROQ_MODELS.default, 'qwen/qwen3.6-27b', 'meta-llama/llama-3.3-70b-instruct', 'openai/gpt-oss-120b']]
+  ]) {
+    if (!client) continue;
+    for (const model of [...new Set(models)]) {
+      try {
+        console.log('⚡ ' + label + ' PRIMARY → ' + model);
+        const params = { messages, model, temperature, max_tokens: 2048 };
+        if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
+        const completion = await client.chat.completions.create(params);
+        const m = completion.choices[0].message;
+        if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: label + ' (' + model + ')' };
+      } catch (err) {
+        const detail = '[' + label + '/' + model + '] ' + err.message;
+        console.warn('❌ ' + detail);
+        providerErrors.push(detail);
+      }
+    }
+  }
+
+  // 2. NVIDIA NIM (BACKUP 1)
+  if (process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.trim() !== '' && !process.env.NVIDIA_API_KEY.includes('your_')) {
+    const nvidiaModels = ['meta/llama-3.2-90b-vision-instruct', 'meta/llama-3.2-11b-vision-instruct'];
     for (const model of nvidiaModels) {
       try {
-        console.log(`🟢 NVIDIA NIM PRIMARY → ${model}`);
+        console.log('🟢 NVIDIA NIM Fallback → ' + model);
         return await callNvidia(messages, temperature, model, tools);
       } catch (err) {
-        const detail = `[NVIDIA/${model}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
+        const detail = '[NVIDIA/' + model + '] ' + err.message;
+        console.warn('❌ ' + detail);
         providerErrors.push(detail);
       }
     }
   }
 
-  // 🚀 IMMEDIATE FALLBACK: OpenRouter (If NVIDIA fails or unavailable)
-  if (process.env.OPENROUTER_API_KEY) {
-    const openrouterModels = [
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'meta-llama/llama-3.3-70b-instruct',
-      'google/gemini-2.0-flash-exp:free',
-      'deepseek/deepseek-r1:free'
-    ];
+  // 3. Google Gemini
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== '') {
+    const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    for (const model of geminiModels) {
+      try {
+        console.log('✨ Google Gemini Fallback → ' + model);
+        return await callGemini(messages, temperature, model);
+      } catch (err) {
+        const detail = '[Gemini/' + model + '] ' + err.message;
+        console.warn('❌ ' + detail);
+        providerErrors.push(detail);
+      }
+    }
+  }
+
+  // 4. OpenRouter
+  if (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim() !== '' && !process.env.OPENROUTER_API_KEY.includes('your_')) {
+    const openrouterModels = ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.0-flash-exp:free', 'deepseek/deepseek-r1:free'];
     for (const model of openrouterModels) {
       try {
-        console.log(`🚀 OpenRouter Fallback → ${model}`);
+        console.log('🚀 OpenRouter Fallback → ' + model);
         return await callOpenRouter(messages, temperature, model);
       } catch (err) {
-        const detail = `[OpenRouter/${model}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
+        const detail = '[OpenRouter/' + model + '] ' + err.message;
+        console.warn('❌ ' + detail);
         providerErrors.push(detail);
       }
     }
   }
 
-  // SECONDARY: Anthropic Claude
-  if (anthropic) {
-    const claudeModels = [
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-sonnet-latest',
-      'claude-3-5-sonnet-20240620',
-      'claude-3-haiku-20240307',
-      'claude-3-5-haiku-20241022',
-      'claude-3-5-haiku-latest'
-    ];
+  // 5. Anthropic Claude
+  if (anthropic && process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes('your_')) {
+    const claudeModels = ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'];
     for (const claudeModel of claudeModels) {
       try {
-        console.log(`🧠 Claude Fallback → ${claudeModel}`);
+        console.log('🧠 Claude Fallback → ' + claudeModel);
         return await callClaude(messages, temperature, claudeModel, tools);
       } catch (err) {
-        const detail = `[Claude/${claudeModel}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
+        const detail = '[Claude/' + claudeModel + '] ' + err.message;
+        console.warn('❌ ' + detail);
         providerErrors.push(detail);
-        // Only try next model if it's a 404 / model not found error
         const errMsg = err.message.toLowerCase();
-        if (!errMsg.includes('404') && !errMsg.includes('not_found') && !errMsg.includes('not found') && !errMsg.includes('model_not_found')) {
+        if (!errMsg.includes('404') && !errMsg.includes('not_found') && !errMsg.includes('model_not_found')) {
           break;
         }
       }
     }
   }
 
-  // FALLBACK: Cerebras (using Cerebras SDK, ultra-fast and free)
-  if (cerebras) {
-    const cerebrasModels = ['llama-3.3-70b', 'llama3.1-8b'];
+  // 6. Cerebras
+  if (cerebras && process.env.CEREBRAS_API_KEY && !process.env.CEREBRAS_API_KEY.includes('your_')) {
+    const cerebrasModels = ['gemma-4-31b', 'gpt-oss-120b'];
     for (const model of cerebrasModels) {
       try {
-        console.log(`🧠 Cerebras Fallback → ${model}`);
-        // Remove tools for Cerebras if they are passed, as Cerebras llama models may not support OpenAI tools format natively
+        console.log('🧠 Cerebras Fallback → ' + model);
         const params = {
           model,
           messages: messages.map(m => ({ role: m.role, content: m.content || '' })),
@@ -845,90 +854,73 @@ async function callLLMOnce(messages, temperature = 0.3, targetModel = 'auto', to
         const completion = await cerebras.chat.completions.create(params);
         const m = completion.choices[0].message;
         if (m) {
-          return { text: m.content || '', tool_calls: null, model: `Cerebras (${model})` };
+          return { text: m.content || '', tool_calls: null, model: 'Cerebras (' + model + ')' };
         }
       } catch (err) {
-        const detail = `[Cerebras/${model}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
+        const detail = '[Cerebras/' + model + '] ' + err.message;
+        console.warn('❌ ' + detail);
         providerErrors.push(detail);
       }
     }
   }
 
-  // FALLBACK 1: Google Gemini (Free API Key from Google AI Studio — ultra-fast)
-  if (process.env.GEMINI_API_KEY) {
-    const geminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-    for (const model of geminiModels) {
-      try {
-        console.log(`✨ Google Gemini Fallback → ${model}`);
-        return await callGemini(messages, temperature, model);
-      } catch (err) {
-        const detail = `[Gemini/${model}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
-        providerErrors.push(detail);
-      }
-    }
-  }
-
-  // FALLBACK 2: OpenAI (gpt-4o-mini — fast & capable) 
-  if (OPENAI_API_KEY) {
+  // 7. OpenAI
+  if (OPENAI_API_KEY && !OPENAI_API_KEY.includes('your_')) {
     const openaiModel = tools ? 'gpt-4o' : 'gpt-4o-mini';
     try {
-      console.log(`🔵 OpenAI Fallback → ${openaiModel}`);
+      console.log('🔵 OpenAI Fallback → ' + openaiModel);
       return await callOpenAI(messages, temperature, openaiModel, tools);
     } catch (err) {
-      const detail = `[OpenAI/${openaiModel}] ${err.message}`;
-      console.warn(`❌ ${detail}`);
+      const detail = '[OpenAI/' + openaiModel + '] ' + err.message;
+      console.warn('❌ ' + detail);
       providerErrors.push(detail);
     }
   }
 
-  // FALLBACK 3: Groq (fast, free-tier — kicks in if Claude + OpenAI fail)
-  for (const [client, label, models] of [
-    [groq, 'Groq', [groqModelId, GROQ_MODELS.default]],
-    [groq2, 'Groq Key2', [groqModelId, GROQ_MODELS.default]]
-  ]) {
-    if (!client) continue;
-    for (const model of [...new Set(models)]) {
-      try {
-        console.log(`⚡ ${label} Fallback → ${model}`);
-        const params = { messages, model, temperature, max_tokens: 2048 };
-        if (tools) { params.tools = tools; params.tool_choice = 'auto'; }
-        const completion = await client.chat.completions.create(params);
-        const m = completion.choices[0].message;
-        if (m) return { text: m.content || '', tool_calls: m.tool_calls || null, model: `${label} (${model})` };
-      } catch (err) {
-        const detail = `[${label}/${model}] ${err.message}`;
-        console.warn(`❌ ${detail}`);
-        providerErrors.push(detail);
-      }
-    }
-  }
-
-  // FALLBACK 4: LLM Gateway (if it has credits)
-  if (process.env.LLM_GATEWAY_API_KEY) {
+  // 8. LLM Gateway
+  if (process.env.LLM_GATEWAY_API_KEY && !process.env.LLM_GATEWAY_API_KEY.includes('your_')) {
     const gatewayModelId = GATEWAY_MODELS[targetModel] || GATEWAY_MODELS.smart;
     try {
-      console.log(`🌐 LLM Gateway Fallback → ${gatewayModelId}`);
+      console.log('🌐 LLM Gateway Fallback → ' + gatewayModelId);
       return await callGateway(messages, temperature, gatewayModelId, tools);
     } catch (err) {
-      const detail = `[Gateway/${gatewayModelId}] ${err.message}`;
-      console.warn(`❌ ${detail}`);
+      const detail = '[Gateway/' + gatewayModelId + '] ' + err.message;
+      console.warn('❌ ' + detail);
       providerErrors.push(detail);
     }
   }
 
+  // 9. Zero-Config Free Fallback: Pollinations AI Text (100% Free, No API Key Required)
+  try {
+    console.log('🌸 Pollinations AI Text Fallback (Zero-Config Free Tier)...');
+    const cleanMessages = messages.map(m => ({ role: m.role, content: m.content || '' }));
+    const res = await fetch('https://text.pollinations.ai/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: cleanMessages, model: 'openai', temperature: 0.7 })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (text) {
+        return { text, tool_calls: null, model: 'Pollinations AI (Free)' };
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ Pollinations AI Text fallback failed:', e.message);
+  }
 
-  const summary = providerErrors.map((e, i) => `  ${i + 1}. ${e}`).join('\n');
-  console.error(`\n🚨 ALL PROVIDERS FAILED:\n${summary}\n`);
-  throw new Error(`All AI providers failed:\n${summary}`);
+  const summary = providerErrors.map((e, i) => '  ' + (i + 1) + '. ' + e).join('\\n');
+  console.error('\\n🚨 ALL PROVIDERS FAILED:\\n' + summary + '\\n');
+  throw new Error('All AI providers failed:\n' + summary);
 }
 
-// ─── SMART AGENT INTELLIGENCE HELPER FUNCTIONS ─────────────────────────────
-
 function storeUserFact(category = 'general', key, value) {
+  const cat = category || 'general';
   try {
-    const cat = category || 'general';
+
+
+
     const stmt = db.prepare(`
       INSERT INTO user_preferences (key, value)
       VALUES (?, ?)
@@ -937,7 +929,7 @@ function storeUserFact(category = 'general', key, value) {
     const fullKey = `fact_${cat}_${key}`;
     stmt.run(fullKey, value, value);
     console.log(`🧠 [Memory Stored] ${fullKey} = "${value}"`);
-    return `✅ Fact saved in Brahmand Memory [Category: ${cat}]: ${key} = "${value}"`;
+    return `✅ Fact saved in Nakshatra Memory [Category: ${cat}]: ${key} = "${value}"`;
   } catch (err) {
     return `❌ Failed to store fact in memory: ${err.message}`;
   }
@@ -966,7 +958,7 @@ async function getViralContentIdeas(niche = 'general', targetAudience = 'India H
   const prompt = [
     {
       role: 'system',
-      content: `You are Brahmand AI Viral Content Strategist. Generate 5 high-converting, viral Reel ideas for the niche: "${niche}" targeting audience: "${targetAudience}".
+      content: `You are Nakshatra AI Viral Content Strategist. Generate 5 high-converting, viral Reel ideas for the niche: "${niche}" targeting audience: "${targetAudience}".
 Return a formatted JSON string with:
 {
   "niche": "${niche}",
@@ -993,7 +985,7 @@ function getAgentAnalytics() {
     const prefCountRow = db.prepare('SELECT COUNT(*) as count FROM user_preferences').get();
     
     return JSON.stringify({
-      agent_name: "Brahmand AI Autonomous Agent",
+      agent_name: "Nakshatra AI Autonomous Agent",
       status: "🟢 Operational & Smart Ready",
       uptime: process.uptime() ? `${Math.floor(process.uptime() / 60)} minutes` : "Active",
       database_analytics: {
@@ -1145,7 +1137,7 @@ async function executeToolCall(toolCall, writeStreamChunk) {
           const replyPrompt = [
             {
               role: 'system',
-              content: `Tu Brahmand (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+              content: `Tu Nakshatra (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
 Tu @${args.username} ke saath Instagram Direct Messages par baat kar raha hai.
 
 🔥 TOPIC → FEATURE MAPPING & LINKS:
@@ -1231,7 +1223,7 @@ GUIDELINES:
           const replyPrompt = [
             {
               role: 'system',
-              content: `Tu Brahmand (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+              content: `Tu Nakshatra (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
 Tu WhatsApp contact "${args.recipient}" ke saath chat kar raha hai.
 
 🔥 TOPIC → FEATURE MAPPING & LINKS:
@@ -2001,7 +1993,7 @@ app.post('/api/reels/approve', async (req, res) => {
     }
 
     const title = plan.title || 'Instagram Reel';
-    const caption = `${plan.caption || title}\n\n${plan.hashtags || '#BrahmandAI'}`;
+    const caption = `${plan.caption || title}\n\n${plan.hashtags || '#NakshatraAI'}`;
     const scenes = plan.scenes || [];
 
     console.log(`\n🚀 [PHASE 2] Starting direct execution for: "${title}"`);
@@ -2051,7 +2043,7 @@ writeChunk({ type: 'status', text: `✅ Dynamic Reel ready — unique scenes per
         success: true,
         message: `✅ **Dynamic Reel Generated & Ready to Preview!**\n\nI have generated a **unique, topic-specific** vertical video reel for **"${title}"** with cinematic motion effects.\n\n🎬 Play the video preview below.\n\nWould you like to post this to Instagram?\n\n<followups>["Confirm and Post Reel to Instagram", "Cancel/Discard"]</followups>`,
         imageUrl: publicVideoUrl,
-        model: 'Brahmand Dynamic Reel Engine (LLM + Flux + Edge TTS + FFmpeg)'
+        model: 'Nakshatra Dynamic Reel Engine (LLM + Flux + Edge TTS + FFmpeg)'
       });
       
     } catch (videoErr) {
@@ -2060,7 +2052,7 @@ writeChunk({ type: 'status', text: `✅ Dynamic Reel ready — unique scenes per
         type: 'done',
         success: false,
         message: `❌ **Dynamic Reel compilation failed:** ${videoErr.message}`,
-        model: 'Brahmand Dynamic Reel Engine'
+        model: 'Nakshatra Dynamic Reel Engine'
       });
     }
 
@@ -2158,7 +2150,7 @@ Return ONLY valid JSON (no markdown, no explanation):
     {"scene_number": 5, "duration_seconds": 7,  "narration": "closing narration",    "visual_prompt": "inspiring closing cinematic image for ${safeTopic}", "motion_hint": "static"}
   ],
   "caption": "Engaging caption with emojis about ${safeTopic}",
-  "hashtags": "#${cleanHashtag} #BrahmandAI #Viral #India"
+  "hashtags": "#${cleanHashtag} #NakshatraAI #Viral #India"
 }`;
 
   let llmJsonStr = null;
@@ -2167,7 +2159,7 @@ Return ONLY valid JSON (no markdown, no explanation):
     const llmMessages = [
       {
         role: 'system',
-        content: `Tu Brahmand hai — India ka best Instagram Reel script writer.\nHar script UNIQUE aur SPECIFIC hoti hai teri. Kabhi generic template use nahi karta.\nShivaji → Raigad, talvar, Jijabai. Ram Mandir → aarti, Ram Lalla, Saryu. Holi → rang, dhol, gulal.\nSirf valid JSON return kar — koi explanation nahi, koi markdown nahi.`
+        content: `Tu Nakshatra hai — India ka best Instagram Reel script writer.\nHar script UNIQUE aur SPECIFIC hoti hai teri. Kabhi generic template use nahi karta.\nShivaji → Raigad, talvar, Jijabai. Ram Mandir → aarti, Ram Lalla, Saryu. Holi → rang, dhol, gulal.\nSirf valid JSON return kar — koi explanation nahi, koi markdown nahi.`
       },
       { role: 'user', content: llmPrompt }
     ];
@@ -2194,7 +2186,7 @@ Return ONLY valid JSON (no markdown, no explanation):
       narration_with_timestamps: fallbackScenes.map((s, i) => `0:${String(i*7).padStart(2,'0')}: ${s.narration}`).join('\n'),
       scenes: fallbackScenes,
       caption: `${topic} ke baare mein yeh jaankar aap hairan ho jaayenge! 🔥\nFollow karo aur share karo! ✨`,
-      hashtags: `#${cleanHashtag} #BrahmandAI #Viral #IndianCulture`
+      hashtags: `#${cleanHashtag} #NakshatraAI #Viral #IndianCulture`
     };
     llmJsonStr = JSON.stringify(_lastPlannedReel, null, 2);
   }
@@ -2255,9 +2247,6 @@ function buildTopicFallbackScenes(topic, topicType) {
   }));
 }
 
-
-
-
 // Helper to update last assistant message content in chat history
 function updateLastAssistantMessage(sessionId, content) {
   try {
@@ -2271,6 +2260,51 @@ function updateLastAssistantMessage(sessionId, content) {
     console.error("Failed to update last assistant message:", err.message);
   }
 }
+
+// ========================================================
+// 🪷 DEDICATED POSTER ENDPOINT — No Streaming, Plain JSON
+// Fast, reliable, no connection errors
+// ========================================================
+app.post('/api/poster', async (req, res) => {
+  try {
+    const { message = '', sessionId = 'default_session', uploadedImage = null } = req.body;
+    const cleanMsg = message.trim().toLowerCase();
+
+    let masterPosterUrl = await generatePosterImage(cleanMsg || 'master');
+    let reply = `🪷 Here's your **Nakshatra Master Poster** for "${message || 'Brahmand'}"!\n\nInstant delivery — dark luxury gold theme, cinematic showcase. Perfect for Meta Ads & Instagram!`;
+
+    if (uploadedImage) {
+      try {
+        const base64Data = uploadedImage.replace(/^data:image\/\w+;base64,/, '');
+        const filename = `custom_upload_${Date.now()}.jpg`;
+        const postersDir = path.join(__dirname, 'public', 'posters');
+        if (!fs.existsSync(postersDir)) fs.mkdirSync(postersDir, { recursive: true });
+        fs.writeFileSync(path.join(postersDir, filename), base64Data, 'base64');
+        masterPosterUrl = `/posters/${filename}`;
+        reply = "🪷 Here is your **Custom Nakshatra Master Poster** from your uploaded photo!\n\nReady for Meta Ads & Instagram marketing!";
+      } catch (e) {
+        console.warn("Custom photo save failed:", e.message);
+      }
+    }
+
+    try { saveMessage(sessionId, 'user', message || '/meta'); } catch (_) {}
+    try { saveMessage(sessionId, 'assistant', reply); } catch (_) {}
+    try { saveSessionData(sessionId, 'last_image_url', masterPosterUrl); } catch (_) {}
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.json({
+      success: true,
+      message: reply,
+      imageUrl: masterPosterUrl,
+      model: 'Meta Poster Engine',
+      sessionId
+    });
+  } catch (err) {
+    console.error("Poster endpoint error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // Streamed Chat Endpoint
 app.post('/api/chat', async (req, res) => {
@@ -2286,6 +2320,7 @@ app.post('/api/chat', async (req, res) => {
     _lastGenImageUrl = null; // Reset per-request
     const { 
       message, 
+      uploadedImage = null,
       sessionId = 'default_session', 
       simulatedSpeed = 'auto', 
       urgent = false,
@@ -2294,21 +2329,69 @@ app.post('/api/chat', async (req, res) => {
       emotion = 'curious'
     } = req.body;
 
-    if (!message) {
-      writeStreamChunk({ error: 'message is required' });
+    if (!message && !uploadedImage) {
+      writeStreamChunk({ error: 'message or uploadedImage is required' });
+      return res.end();
+    }
+
+    const cleanMsg = (message || '').trim().toLowerCase();
+
+    // 🪷 Poster Interceptor — catches ONLY the /meta slash command or explicit poster keywords
+    // ⚠️ FIX: cleanMsg.startsWith('meta') was TOO BROAD — it hijacked "meta ads run", 
+    //         "meta campaign", etc. and wrongly sent them to the poster flow.
+    //         Now only the /meta slash command OR explicit "poster" keywords trigger this.
+    const isPosterRequest = cleanMsg.startsWith('/meta') ||
+      cleanMsg.includes('poster') || cleanMsg.includes('master poster') ||
+      cleanMsg.includes('nakshatra poster') || cleanMsg.includes('brahmand poster') ||
+      (uploadedImage && (cleanMsg.includes('poster') || cleanMsg === ''));
+
+    if (isPosterRequest) {
+      writeStreamChunk({ type: 'status', text: '🎨 Processing Master Promotional Poster...' });
+      
+      let masterPosterUrl = generatePosterImage ? await generatePosterImage(cleanMsg) : '/posters/poster_master_cinematic_ad.jpg';
+      let reply = "Here's your exclusive **Nakshatra Master Premium Cinematic Promotional Poster**! 🪷✨\n\nCrafted with a dark-luxury theme, glowing golden accents, and a sleek 3D smartphone showcase. Perfect for Meta Ads, Instagram feed, or digital marketing campaigns!";
+
+      if (uploadedImage) {
+        try {
+          const base64Data = uploadedImage.replace(/^data:image\/\w+;base64,/, '');
+          const filename = `custom_upload_${Date.now()}.jpg`;
+          const postersDir = path.join(__dirname, 'public', 'posters');
+          if (!fs.existsSync(postersDir)) {
+            fs.mkdirSync(postersDir, { recursive: true });
+          }
+          const uploadPath = path.join(postersDir, filename);
+          fs.writeFileSync(uploadPath, base64Data, 'base64');
+          masterPosterUrl = `/posters/${filename}`;
+          reply = "Here is your custom **Brahmand Master Promotional Poster** generated from your uploaded photo! 🪷✨\n\nShowcasing your uploaded screenshot in ultra-high quality, ready for Meta Ads & Instagram marketing!";
+        } catch (e) {
+          console.warn("Custom photo save failed, using default master poster:", e.message);
+        }
+      }
+
+      saveMessage(sessionId, 'user', message || '/meta');
+      saveMessage(sessionId, 'assistant', reply);
+      _lastGenImageUrl = masterPosterUrl;
+      saveSessionData(sessionId, 'last_image_url', masterPosterUrl);
+
+      writeStreamChunk({
+        type: 'done',
+        success: true,
+        sessionId,
+        message: reply,
+        imageUrl: masterPosterUrl,
+        model: 'Meta Poster Engine'
+      });
+      if (typeof res.flush === 'function') res.flush();
       return res.end();
     }
 
     const startTime = Date.now();
-
-    // Intercept Instagram Reel preview confirmation flows directly
-    const cleanMsg = message.trim().toLowerCase();
     if (cleanMsg === 'confirm and post reel to instagram' || cleanMsg === 'confirm & post reel to instagram') {
       writeStreamChunk({ type: 'status', text: '🚀 Fetching cached media and caption...' });
       
       const lastVideoPath = getSessionData(sessionId, 'last_video_path') || _lastGenVideoPath;
       const lastImageUrl = getSessionData(sessionId, 'last_image_url') || _lastGenImageUrl;
-      const lastCaption = getSessionData(sessionId, 'last_video_caption') || getSessionData(sessionId, 'last_image_caption') || 'Brahmand AI Reel #BrahmandAI';
+      const lastCaption = getSessionData(sessionId, 'last_video_caption') || getSessionData(sessionId, 'last_image_caption') || 'Brahmand AI Reel #NakshatraAI';
       
       if (!lastVideoPath && !lastImageUrl) {
         saveMessage(sessionId, 'user', message);
@@ -2696,7 +2779,7 @@ CRITICAL CONSTRAINTS — DO NOT VIOLATE:
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
-  console.log(`\n🚀 Brahmand Smart Decision Agent running on http://localhost:${PORT}`);
+  console.log(`\n🚀 Nakshatra Smart Decision Agent running on http://localhost:${PORT}`);
   
   /*
   // Start background auto-reply loop for Instagram
@@ -2737,7 +2820,7 @@ Website: https://brahmand.app
 
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log(`\n❌ Port ${PORT} is already in use! Another instance of Brahmand AI Agent is already running.`);
+    console.log(`\n❌ Port ${PORT} is already in use! Another instance of Nakshatra AI Agent is already running.`);
     console.log(`👉 Please close all other running terminal windows / node processes, or set PORT=3001 in your .env file.`);
     process.exit(1);
   } else {

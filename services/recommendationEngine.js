@@ -9,6 +9,16 @@ import Database from 'better-sqlite3';
 
 // ─── 1. BRAHMAND APP KNOWLEDGE BRAIN ─────────────────────────────────────────
 export const BRAHMAND_FEATURE_BRAIN = {
+  brahmand_ai: {
+    name: "Brahmand AI Spiritual Companion",
+    purpose: "Interactive AI assistant designed to explore dharmik, spiritual, and scriptural questions with authentic Vedic knowledge",
+    problem_solved: "Difficulty finding authentic, simplified explanations of scriptures, shlokas, and Sanatan concepts without misinformation",
+    user_benefit: "Instant, accurate scriptural answers, spiritual clarity, and personalized dharmik guidance 24/7",
+    related_topics: ["brahmand ai", "ai", "scriptures", "gita", "ramayana", "vedas", "dharmik questions", "sanatan knowledge", "shloka meaning"],
+    related_interests: ["Dharmik Knowledge", "Bhagavad Gita", "Vedic Science", "AI & Spirituality"],
+    relevant_audience: ["Knowledge Seekers", "Students", "Spiritual Inquirers", "Young Sanatanis"],
+    promotional_angles: ["Ask any spiritual or scriptural question and get instant Vedic clarity", "Your personal Sanatan AI assistant in your pocket"]
+  },
   live_jaap_counter: {
     name: "Live Mantra Jaap Counter",
     purpose: "Digital mala counter for tracking mantra repetitions and global jaap meditation",
@@ -19,15 +29,35 @@ export const BRAHMAND_FEATURE_BRAIN = {
     relevant_audience: ["Devotees", "Daily Meditators", "Chanting Seekers"],
     promotional_angles: ["Track your 108 mala counts seamlessly", "Join millions in global Live Jaap"]
   },
-  mantra_library: {
-    name: "Mantra Library with Meanings",
-    purpose: "Authentic repository of 100+ Vedic mantras with lyrics, audio, and scriptural meaning",
-    problem_solved: "Lack of authentic pronunciation and understanding of sacred mantras",
-    user_benefit: "Deep spiritual knowledge and correct chanting guidance",
-    related_topics: ["vedas", "sanskrit", "shloka", "stotram", "meaning", "shiva stuti", "hanuman chalisa"],
-    related_interests: ["Vedas", "Sanskrit", "Stotrams", "Scriptures"],
-    relevant_audience: ["Sanskrit Learners", "Scripture Readers", "Devotional Listeners"],
-    promotional_angles: ["Discover exact scriptural meanings of ancient mantras"]
+  jaap_counter: {
+    name: "Smart Jaap Counter & Mala Tracker",
+    purpose: "Haptic and audio-assisted digital mala counter that automatically counts and logs daily mantra jaap",
+    problem_solved: "Forgetting mala count while chanting, losing concentration due to manual counting",
+    user_benefit: "Chant with 100% focus on devotion while the app automatically tracks counting",
+    related_topics: ["jaap counter", "mala", "108 count", "om namah shivaya", "mantra counting", "jaap tracking"],
+    related_interests: ["Japa", "Mantra Chanting", "Bhakti", "Daily Routine"],
+    relevant_audience: ["Mahadev Devotees", "Hanuman Devotees", "Mantra Practitioners"],
+    promotional_angles: ["Focus on devotion, not counting - Smart Jaap Tracker handles your 108 count", "Jaap karte waqt count bhool jaate ho? Solve it now"]
+  },
+  brahmand_passport: {
+    name: "Brahmand Passport & Spiritual Identity",
+    purpose: "Personalized digital spiritual passport tracking milestones, temple visits, jaap streaks, and spiritual identity",
+    problem_solved: "Lack of a single platform to track personal spiritual journey, milestones, and daily progress",
+    user_benefit: "Visualize your lifelong spiritual journey, earn badges, and build a meaningful Sanatan identity",
+    related_topics: ["passport", "spiritual identity", "journey", "milestones", "streaks", "badges", "progress"],
+    related_interests: ["Spiritual Journey", "Self Improvement", "Personal Identity"],
+    relevant_audience: ["Young Sanatanis", "Gamified Sadhana Seekers", "Active Community Members"],
+    promotional_angles: ["Build your personalized Sanatan Spiritual Passport today", "Track your spiritual journey from daily jaap to sacred temple visits"]
+  },
+  dharmik_community: {
+    name: "Dharmik Devotee Community",
+    purpose: "Social and spiritual community space to connect, share experiences, discuss scriptures, and pray together",
+    problem_solved: "Feeling isolated in daily spiritual practice and lacking a safe, positive Sanatan community",
+    user_benefit: "Connect with verified devotees, share spiritual realizations, and participate in collective prayer",
+    related_topics: ["community", "devotees", "sanatan network", "group jaap", "spiritual discussions", "satsang"],
+    related_interests: ["Satsang", "Community", "Bhakti Group", "Sanatan Unity"],
+    relevant_audience: ["Devotees", "Youth", "NRI Sanatanis", "Satsang Seekers"],
+    promotional_angles: ["Connect with millions of like-minded Sanatan devotees worldwide", "Share your spiritual journey in a dedicated dharmik community"]
   },
   temple_finder: {
     name: "Ancient Temple Finder & History Guide",
@@ -48,6 +78,26 @@ export const BRAHMAND_FEATURE_BRAIN = {
     related_interests: ["Live Darshan", "Aarti", "Daily Devotion"],
     relevant_audience: ["Elderly Devotees", "NRI Sanatanis", "Daily Darshan Seekers"],
     promotional_angles: ["Experience live divine aarti from Kashi and Mahakaal direct to your phone"]
+  },
+  spiritual_feed: {
+    name: "Spiritual Content & Short Video Feed",
+    purpose: "Curated feed of short videos, shlokas, temple stories, and Sanatan educational content",
+    problem_solved: "Distracting and non-dharmik algorithms on mainstream social media platforms",
+    user_benefit: "100% pure, uplifting, and authentic Sanatan short videos without negativity",
+    related_topics: ["reels", "short videos", "sanatan feed", "temple stories", "shlokas", "mythology", "dharmik feed"],
+    related_interests: ["Sanatan Content", "Short Videos", "Spiritual Reels"],
+    relevant_audience: ["Short-video Viewers", "Youth", "Devotional Content Consumers"],
+    promotional_angles: ["Discover 100% authentic Sanatan short videos without social media noise"]
+  },
+  mantra_library: {
+    name: "Mantra Library with Meanings",
+    purpose: "Authentic repository of 100+ Vedic mantras with lyrics, audio, and scriptural meaning",
+    problem_solved: "Lack of authentic pronunciation and understanding of sacred mantras",
+    user_benefit: "Deep spiritual knowledge and correct chanting guidance",
+    related_topics: ["vedas", "sanskrit", "shloka", "stotram", "meaning", "shiva stuti", "hanuman chalisa"],
+    related_interests: ["Vedas", "Sanskrit", "Stotrams", "Scriptures"],
+    relevant_audience: ["Sanskrit Learners", "Scripture Readers", "Devotional Listeners"],
+    promotional_angles: ["Discover exact scriptural meanings of ancient mantras"]
   },
   ai_jyotish_kundli: {
     name: "AI Jyotish & Vedic Kundli Generator",

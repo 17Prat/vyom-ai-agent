@@ -1,0 +1,48 @@
+# 🪷 BRAHMAND APP — MASTER PREMIUM CINEMATIC PROMOTIONAL POSTER
+## 📜 MASTER CAMPAIGN ARTWORK & DESIGN SPECIFICATIONS
+
+---
+
+### 🎨 OFFICIAL MASTER CINEMATIC PROMOTIONAL POSTER
+
+![BRAHMAND App Master Premium Cinematic Promotional Poster](file:///c:/Users/prarh/Downloads/BRAHMAND%20AI%20AGENT/BRAHMANDPOSTER/poster_master_cinematic_ad.jpg)
+
+---
+
+### 📐 COMPLETE DESIGN BREAKDOWN & STRUCTURE
+
+#### 1. Branding & Logo (Top Left):
+- **Logo Visual**: Glowing Pink Lotus over dark gold aura
+- **Text**: `BRAHMAND — The Daily Sanatan Community`
+- **Sub-tagline**: `Dharma • Safety • Trusted help`
+
+#### 2. Main Marketing Headline:
+> **Stay Connected.**  
+> **Stay <span style="color:#D4AF37">Blessed</span>.**  
+> **Live Sanatan.**
+
+#### 3. Flagship Smartphone UI Mockup (Right Side):
+- Tilted 3D Metallic iPhone displaying **Real Brahmand App Home Screen UI**
+- **Hanuman Chalisa Live Jaap** hero banner (*1,248 devotees chanting*)
+- **Blood Request Seva** card (*JJ Hospital, Mumbai*)
+- **Sai Flower Decorator** card
+- **Live Kedarnath Aarti** HD stream card
+
+#### 4. Feature Highlights Grid (Left Side):
+- 🛡️ **Quick Help (SOS)** — Instant support when you need it most.
+- 🪷 **Dharma Guidance** — Ask. Learn. Grow with AI Dharma Guidance.
+- 👥 **Trusted Community** — Connect with verified devotees & vendors.
+- 🛕 **Live Darshan & Aarti** — Experience temples and aartis live.
+
+#### 5. Call-To-Action (Bottom Left):
+- Golden Gradient Button: **`Download Now`** (*Join the Sanatan Family*)
+- Badges: `Google Play` & `Apple App Store`
+
+#### 6. Cinematic Bottom Visual & Emotional Message (Bottom Right):
+- Ancient Indian temple silhouettes in a warm golden sunset fog with a devotee holding a glowing diya lamp.
+- Translucent Glassmorphism Card:
+  > **Sanatan in our Hearts.**  
+  > **Dharma in our Actions.**
+
+---
+*Official Master Poster file saved at `c:\Users\prarh\Downloads\BRAHMAND AI AGENT\BRAHMANDPOSTER\poster.md`*

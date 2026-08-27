@@ -1,7 +1,7 @@
 {
-  "name": "brahmand-ai-agent",
+  "name": "nakshatra-ai-agent",
   "version": "1.0.0",
-  "description": "Brahmand AI Agent powered by Groq",
+  "description": "Nakshatra AI Agent powered by Groq",
   "main": "index.js",
   "type": "module",
   "scripts": {
