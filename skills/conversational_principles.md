@@ -1,4 +1,4 @@
-# SKILL: Conversational Principles
+﻿# SKILL: Conversational Principles
 
 ## 📋 Metadata
 **Type**: Persona & Tone Management

@@ -1,4 +1,4 @@
-# SKILL: Short Response Controller
+﻿# SKILL: Short Response Controller
 
 ## 📋 Metadata
 **Type**: Response Management

@@ -1,4 +1,4 @@
----
+﻿---
 name: Dynamic Language Matching
 description: Ensures the AI strictly matches the language and script used by the user.
 ---

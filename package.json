@@ -1,7 +1,7 @@
-{
-  "name": "nakshatra-ai-agent",
+﻿{
+  "name": "vyom-ai-agent",
   "version": "1.0.0",
-  "description": "Nakshatra AI Agent powered by Groq",
+  "description": "VyomAI — Autonomous AI Agent for content, social media & outreach",
   "main": "index.js",
   "type": "module",
   "scripts": {

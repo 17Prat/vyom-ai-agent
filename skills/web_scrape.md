@@ -1,4 +1,4 @@
-name: web-scrape-extract
+﻿name: web-scrape-extract
 description: Extract clean LLM-ready markdown, text data, or product info from any website URL.
 
 # Web Scraping & Data Extraction Skill

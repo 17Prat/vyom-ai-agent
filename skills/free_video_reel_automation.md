@@ -1,4 +1,4 @@
-# 🎬 FREE VIDEO & REEL AUTOMATION SKILL
+﻿# 🎬 FREE VIDEO & REEL AUTOMATION SKILL
 
 ## Objective
 Generate high-retention short-video scripts (Instagram Reels / YouTube Shorts) combined with free visual poster assets. No paid video generation API keys required.

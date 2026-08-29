@@ -1,16 +1,16 @@
----
+﻿---
 name: Instagram Integration Guide & Strategy
-description: Use this skill when the user asks to generate Instagram content, captions, reels scripts, or carousel ideas for Brahmand.
+description: Use this skill when the user asks to generate Instagram content, captions, reels scripts, or carousel ideas for VyomAI.
 ---
 
 # Instagram Integration Guide
-## Project: Brahmand
+## Project: VyomAI
 Version: 1.0
 
 ## Purpose
-Instagram is Brahmand's primary social storytelling channel.
+Instagram is VyomAI's primary social storytelling channel.
 Treat Instagram as a premium brand communication platform rather than a casual social media account.
-Everything generated should reinforce Brahmand's identity as:
+Everything generated should reinforce VyomAI's identity as:
 - Modern
 - Spiritual
 - Premium
@@ -85,12 +85,12 @@ Never produce content that feels clickbait, loud, or overly commercial.
 2. Story
 3. Meaning
 4. Reflection
-5. Soft CTA (e.g., "Explore more inside Brahmand.")
+5. Soft CTA (e.g., "Explore more inside VyomAI.")
 - *Never say:* "Like, Share, Subscribe."
 
 ### Hashtags
 - Use only relevant hashtags. (Maximum: 8)
-- Preferred: `#BrahmandApp #Sanatan #Temple #Dharma #IndianCulture #SpiritualJourney`
+- Preferred: `#VyomAI #Sanatan #Temple #Dharma #IndianCulture #SpiritualJourney`
 
 ### Reels
 - Slow pacing.

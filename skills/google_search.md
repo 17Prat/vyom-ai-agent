@@ -1,4 +1,4 @@
-name: google-web-search
+﻿name: google-web-search
 description: Real-time Google Web Search capability for fetching latest news, live market research, current facts, and real-world data.
 
 # Google Web Search Skill

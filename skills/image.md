@@ -1,4 +1,4 @@
-# gpt-image
+﻿# gpt-image
 Agent runbook for Image generation/editing. Use the prompt library + packaged CLI.
 
 ## Operating Loop

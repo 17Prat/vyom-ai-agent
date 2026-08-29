@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" class="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nakshatra</title>
+  <title>VyomAI</title>
   <link rel="icon" type="image/jpeg" href="/appicon.jpeg">
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -455,7 +455,7 @@
       <!-- Top Header -->
       <header class="top-header">
         <div class="brand-title" onclick="resetToHome()">
-          Nakshatra <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: #666;"></i>
+          VyomAI <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: #666;"></i>
         </div>
 
         <div class="top-header-right">
@@ -504,7 +504,7 @@
 
   <script>
     let currentSessionId = null;
-    let sessions = JSON.parse(localStorage.getItem('nakshatra_sessions') || '[]');
+    let sessions = JSON.parse(localStorage.getItem('vyomai_sessions') || '[]');
     let activeAbortController = null;
     let currentAttachedImageData = null;
 
@@ -878,12 +878,12 @@
         session.messages.push({ text: cleanText, sender, model, imageUrl, revisionSuggested, originalQuery });
         
         try {
-          localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+          localStorage.setItem('vyomai_sessions', JSON.stringify(sessions));
         } catch (storageErr) {
           console.warn("localStorage quota exceeded, clearing old sessions:", storageErr.message);
           sessions = sessions.slice(0, 10);
           try {
-            localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+            localStorage.setItem('vyomai_sessions', JSON.stringify(sessions));
           } catch (e2) {
             console.warn("Could not save to localStorage:", e2.message);
           }
@@ -937,14 +937,14 @@
       const s = sessions.find(item => item.id === id);
       if (s) {
         s.pinned = !s.pinned;
-        localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+        localStorage.setItem('vyomai_sessions', JSON.stringify(sessions));
         renderSidebarChats();
       }
     }
 
     async function deleteSession(id) {
       sessions = sessions.filter(s => s.id !== id);
-      localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+      localStorage.setItem('vyomai_sessions', JSON.stringify(sessions));
 
       try {
         await fetch(`/api/session/${id}`, { method: 'DELETE' });
@@ -1155,7 +1155,7 @@
                 break;
               }
             }
-            localStorage.setItem('nakshatra_sessions', JSON.stringify(sessions));
+            localStorage.setItem('vyomai_sessions', JSON.stringify(sessions));
           }
         } else {
           if (panel) {
@@ -1462,7 +1462,7 @@
               <img src="${escapeHtml(imageUrl)}" class="generated-img" alt="Generated Poster" />
               <div style="position: absolute; bottom: 15px; right: 15px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 4px 10px 4px 4px; border-radius: 30px; backdrop-filter: blur(4px);">
                 <img src="/appicon.jpeg" style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);" />
-                <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">Nakshatra AI</span>
+                <span style="color: white; font-size: 0.75rem; font-weight: 600; font-family: 'Inter', sans-serif; letter-spacing: 0.5px;">VyomAI</span>
               </div>
             </div>
           `;

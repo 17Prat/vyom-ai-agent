@@ -1,4 +1,4 @@
-# FLUX & MIDJOURNEY IMAGE PROMPT GENERATOR SKILL
+﻿# FLUX & MIDJOURNEY IMAGE PROMPT GENERATOR SKILL
 
 ## Objective
 Convert raw marketing post concepts into ultra-high-quality, highly detailed image generation prompts specifically tailored for FLUX.1 / Midjourney v6 / DALL-E 3 models.

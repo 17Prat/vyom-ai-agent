@@ -249,7 +249,7 @@ function saveWebsitePreview(sessionId, aiResponseText) {
   return null;
 }
 
-const DECISION_SYSTEM_PROMPT = `Tu Nakshatra AI hai — Brahmand App ka official Content Intelligence, Personalized Recommendation Agent aur Reel Creation Assistant.
+const DECISION_SYSTEM_PROMPT = `Tu VyomAI hai — VyomAI App ka official Content Intelligence, Personalized Recommendation Agent aur Reel Creation Assistant.
 
 # 🧠 NAKSHATRA AI MASTER SYSTEM DIRECTIVES
 
@@ -259,7 +259,7 @@ Understand Content (Content DNA) → Understand User (Dynamic Interests) → Lea
 ## 2. CONTENT INTELLIGENCE (CONTENT DNA)
 Har reel aur post ka semantic Content DNA identify karo:
 - Primary & Secondary Topics, Entities, Deities, Temples, Historical/Mythological/Spiritual references.
-- Content Type, Emotional Tone, Knowledge Level, Related Topics, Related Brahmand Features.
+- Content Type, Emotional Tone, Knowledge Level, Related Topics, Related VyomAI Features.
 
 ## 3. DYNAMIC USER INTELLIGENCE
 User ke interests dynamically track aur adjust karo across 3 levels:
@@ -274,7 +274,7 @@ User ke interests dynamically track aur adjust karo across 3 levels:
 - Mix strategy: 55% Strong Match, 20% Closely Related Topics, 15% Exploration, 10% Fresh/Strategic Content.
 - Anti-Monotony Rule: Avoid consecutive identical topic recommendations.
 
-## 5. CONTEXTUAL BRAHMAND FEATURE MATCHING
+## 5. CONTEXTUAL VYOMAI FEATURE MATCHING
 Features (Live Jaap Counter, Mantra Library, Temple Finder, Live Darshan, AI Jyotish/Kundli, Daily Sadhana, SOS Emergency) ko contextually introduce karo. Educational first, promotional second.
 
 ## 6. MANDATORY 17 REEL OUTPUT COMPONENTS
@@ -289,7 +289,7 @@ Jab user reel create karne bole, exact in 17 steps format mein return karo:
 8. Scene-by-Scene Breakdown
 9. Cinematic Image Prompt for each scene
 10. On-Screen Text
-11. Brahmand Feature Integration
+11. VyomAI Feature Integration
 12. CTA
 13. Instagram Caption
 14. Relevant Hashtags
@@ -376,7 +376,7 @@ Tu yeh sab yaad rakhega HAR BAAR:
 
 Kya aap daily Hare Krishna mahamantra ka jaap karte hain?
 
-**Agar aapko chanting mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+**Agar aapko chanting mein interest hai toh VyomAI App ke yeh features useful ho sakte hain:**
 1. **Live Jaap Counter** — mantra jaap track karne ke liye
 2. **Mantra Library** — 100+ mantras with meaning
 3. **Daily Sadhana** — daily spiritual routine tracker
@@ -391,7 +391,7 @@ Kya aap daily Hare Krishna mahamantra ka jaap karte hain?
 
 Kya aap daily Hanuman Chalisa ka paath karte hain?
 
-**Agar aapko chanting mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+**Agar aapko chanting mein interest hai toh VyomAI App ke yeh features useful ho sakte hain:**
 1. **Live Jaap Counter** — mantra jaap track karne ke liye
 2. **Mantra Library** — 100+ mantras with meaning
 3. **Daily Sadhana** — daily spiritual routine tracker
@@ -406,7 +406,7 @@ Kya aap daily Hanuman Chalisa ka paath karte hain?
 
 Kya aap inme se kisi ke baare mein jaanna chahte hain?
 
-**Agar aapko temples mein interest hai toh Brahmand App ke yeh features useful ho sakte hain:**
+**Agar aapko temples mein interest hai toh VyomAI App ke yeh features useful ho sakte hain:**
 1. **Temple Finder** — nearby temples dhoondhne ke liye
 2. **Live Darshan** — mandiron ke live aarti aur darshan dekhiye
 3. **AI Jyotish** — mandir se related spiritual guidance
@@ -419,15 +419,15 @@ Kya aap inme se kisi ke baare mein jaanna chahte hain?
 ✅ **AB BOT YE BOLEGA:**
 "Bahut achha! 🎉 Main app install karne mein aapki help karta hoon.
 
-**Brahmand App Install Kaise Karein:**
+**VyomAI App Install Kaise Karein:**
 
 **For Android (Google Play Store):**
-1. Play Store kholiye aur search karein: **Brahmand AI**
+1. Play Store kholiye aur search karein: **VyomAI**
 2. **Install** button tap karein.
 3. Link: https://play.google.com/store/apps/details?id=com.brahmand.app
 
 **For iOS (Apple App Store):**
-1. App Store kholiye aur search karein: **Brahmand App**
+1. App Store kholiye aur search karein: **VyomAI App**
 2. **Get / Download** button tap karein.
 3. Link: https://apps.apple.com/app/brahmand-app/id6765467224
 
@@ -1137,7 +1137,7 @@ async function executeToolCall(toolCall, writeStreamChunk) {
           const replyPrompt = [
             {
               role: 'system',
-              content: `Tu Nakshatra (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+              content: `Tu VyomAI hai — VyomAI App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
 Tu @${args.username} ke saath Instagram Direct Messages par baat kar raha hai.
 
 🔥 TOPIC → FEATURE MAPPING & LINKS:
@@ -1223,7 +1223,7 @@ GUIDELINES:
           const replyPrompt = [
             {
               role: 'system',
-              content: `Tu Nakshatra (ब्रह्मांड) hai — Brahmand App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
+              content: `Tu VyomAI hai — VyomAI App ka official ultra-intelligent, friendly, aur highly empathetic AI assistant.
 Tu WhatsApp contact "${args.recipient}" ke saath chat kar raha hai.
 
 🔥 TOPIC → FEATURE MAPPING & LINKS:
@@ -2119,7 +2119,7 @@ async function planInstagramReel(topic) {
     general:            'GENERAL style: Mix engaging facts, real people experiencing this topic, specific visual details.'
   }[topicType] || 'GENERAL style.';
 
-  const llmPrompt = `You are Brahmand — India's best Instagram Reel script writer.
+  const llmPrompt = `You are VyomAI — India's best Instagram Reel script writer.
 
 Write a UNIQUE, SPECIFIC script for: "${topic}"
 
@@ -2271,7 +2271,7 @@ app.post('/api/poster', async (req, res) => {
     const cleanMsg = message.trim().toLowerCase();
 
     let masterPosterUrl = await generatePosterImage(cleanMsg || 'master');
-    let reply = `🪷 Here's your **Nakshatra Master Poster** for "${message || 'Brahmand'}"!\n\nInstant delivery — dark luxury gold theme, cinematic showcase. Perfect for Meta Ads & Instagram!`;
+    let reply = `🪷 Here's your **Nakshatra Master Poster** for "${message || 'VyomAI'}"!\n\nInstant delivery — dark luxury gold theme, cinematic showcase. Perfect for Meta Ads & Instagram!`;
 
     if (uploadedImage) {
       try {
@@ -2342,7 +2342,7 @@ app.post('/api/chat', async (req, res) => {
     //         Now only the /meta slash command OR explicit "poster" keywords trigger this.
     const isPosterRequest = cleanMsg.startsWith('/meta') ||
       cleanMsg.includes('poster') || cleanMsg.includes('master poster') ||
-      cleanMsg.includes('nakshatra poster') || cleanMsg.includes('brahmand poster') ||
+      cleanMsg.includes('nakshatra poster') || cleanMsg.includes('vyomai poster') ||
       (uploadedImage && (cleanMsg.includes('poster') || cleanMsg === ''));
 
     if (isPosterRequest) {
@@ -2362,7 +2362,7 @@ app.post('/api/chat', async (req, res) => {
           const uploadPath = path.join(postersDir, filename);
           fs.writeFileSync(uploadPath, base64Data, 'base64');
           masterPosterUrl = `/posters/${filename}`;
-          reply = "Here is your custom **Brahmand Master Promotional Poster** generated from your uploaded photo! 🪷✨\n\nShowcasing your uploaded screenshot in ultra-high quality, ready for Meta Ads & Instagram marketing!";
+          reply = "Here is your custom **VyomAI Master Promotional Poster** generated from your uploaded photo! 🪷✨\n\nShowcasing your uploaded screenshot in ultra-high quality, ready for Meta Ads & Instagram marketing!";
         } catch (e) {
           console.warn("Custom photo save failed, using default master poster:", e.message);
         }
@@ -2391,7 +2391,7 @@ app.post('/api/chat', async (req, res) => {
       
       const lastVideoPath = getSessionData(sessionId, 'last_video_path') || _lastGenVideoPath;
       const lastImageUrl = getSessionData(sessionId, 'last_image_url') || _lastGenImageUrl;
-      const lastCaption = getSessionData(sessionId, 'last_video_caption') || getSessionData(sessionId, 'last_image_caption') || 'Brahmand AI Reel #NakshatraAI';
+      const lastCaption = getSessionData(sessionId, 'last_video_caption') || getSessionData(sessionId, 'last_image_caption') || 'VyomAI Reel #VyomAI';
       
       if (!lastVideoPath && !lastImageUrl) {
         saveMessage(sessionId, 'user', message);
@@ -2802,7 +2802,7 @@ const server = app.listen(PORT, () => {
             
             const prompt = `
 Write a polite, warm, and brief Hinglish reply to: "${lastMessage}"
-Introduce the premium Sanatan/heritage app "Brahmand". Keep it under 2 sentences.
+Introduce the premium Sanatan/heritage app "VyomAI". Keep it under 2 sentences.
 Website: https://brahmand.app
 `;
             const replyText = await askLLM(prompt, 300);
