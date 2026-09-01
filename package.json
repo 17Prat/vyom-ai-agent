@@ -1,7 +1,7 @@
-﻿{
-  "name": "vyom-ai-agent",
+{
+  "name": "vyom-automations",
   "version": "1.0.0",
-  "description": "VyomAI — Autonomous AI Agent for content, social media & outreach",
+  "description": "Vyom Automations — Autonomous Agent for content, social media & outreach",
   "main": "index.js",
   "type": "module",
   "scripts": {

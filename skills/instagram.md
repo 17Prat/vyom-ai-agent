@@ -1,16 +1,16 @@
-﻿---
+---
 name: Instagram Integration Guide & Strategy
-description: Use this skill when the user asks to generate Instagram content, captions, reels scripts, or carousel ideas for VyomAI.
+description: Use this skill when the user asks to generate Instagram content, captions, reels scripts, or carousel ideas for Vyom Automations.
 ---
 
 # Instagram Integration Guide
-## Project: VyomAI
+## Project: Vyom Automations
 Version: 1.0
 
 ## Purpose
-Instagram is VyomAI's primary social storytelling channel.
+Instagram is Vyom Automations's primary social storytelling channel.
 Treat Instagram as a premium brand communication platform rather than a casual social media account.
-Everything generated should reinforce VyomAI's identity as:
+Everything generated should reinforce Vyom Automations's identity as:
 - Modern
 - Spiritual
 - Premium
@@ -90,7 +90,7 @@ Never produce content that feels clickbait, loud, or overly commercial.
 
 ### Hashtags
 - Use only relevant hashtags. (Maximum: 8)
-- Preferred: `#VyomAI #Sanatan #Temple #Dharma #IndianCulture #SpiritualJourney`
+- Preferred: `#VyomAutomations #Sanatan #Temple #Dharma #IndianCulture #SpiritualJourney`
 
 ### Reels
 - Slow pacing.
